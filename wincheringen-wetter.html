@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Wetter Wincheringen-Mont</title>
+<meta name="description" content="Live-Wetterdaten der AWEKAS-Station Wincheringen-Mont">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Source+Sans+3:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  color-scheme: light;
+  --bg:#e7ece5; --surface:#f6f8f3; --surface2:#e9eee6; --track:#d6ddd3;
+  --ink:#18231f; --ink2:#45544f; --mute:#75837e; --line:rgba(24,35,31,.12);
+  --c-wind:#2a6296; --c-gust:#17406b; --c-rain:#2b57a8; --c-sun:#c98200; --c-press:#6a4c93; --c-hum:#1f7a62;
+  --good:#2f8f3a; --warn:#d6a100; --serious:#d9692f; --crit:#c23a3a; --ext:#6a4c93;
+  --hero:#3c7a68;
+  --disp:"Bricolage Grotesque","Segoe UI",system-ui,sans-serif;
+  --body:"Source Sans 3","Segoe UI",system-ui,sans-serif;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme: dark;
+    --bg:#0f1514; --surface:#172120; --surface2:#1e2a28; --track:#2b3a37;
+    --ink:#eef3ef; --ink2:#b4c1bb; --mute:#80908a; --line:rgba(255,255,255,.1);
+    --c-wind:#6fa8de; --c-gust:#9cc4ea; --c-rain:#6f9ae6; --c-sun:#e8b23a; --c-press:#a794d6; --c-hum:#4cc3a0;
+  }
+}
+*{box-sizing:border-box}
+html{height:100%}
+body{margin:0;min-height:100%;background:var(--bg);color:var(--ink);font-family:var(--body);font-size:16px;line-height:1.4;
+  padding:env(safe-area-inset-top,0) env(safe-area-inset-right,0) env(safe-area-inset-bottom,0) env(safe-area-inset-left,0);
+  -webkit-font-smoothing:antialiased}
+.wrap{max-width:1040px;margin:0 auto;padding:16px 14px 40px}
+.disp{font-family:var(--disp)}
+.tn{font-variant-numeric:tabular-nums}
+
+/* Kopf */
+.top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:12px}
+.top h1{font-family:var(--disp);font-weight:800;font-size:clamp(22px,4.5vw,30px);margin:0;letter-spacing:-.01em}
+.top .sub{color:var(--ink2);font-size:14px}
+.status{display:inline-flex;align-items:center;gap:7px;padding:5px 11px;border-radius:999px;background:var(--surface);border:1px solid var(--line);font-size:13px;font-weight:600;white-space:nowrap}
+.status i{width:8px;height:8px;border-radius:50%;background:var(--mute)}
+.status.live i{background:var(--good)}
+.status.old i{background:var(--warn)}
+.stamp{color:var(--mute);font-size:13px;margin:-4px 0 12px}
+.banner{display:none;margin:0 0 12px;padding:10px 14px;border-radius:10px;background:var(--surface);border:1px solid var(--line);border-left:4px solid var(--warn);color:var(--ink2);font-size:14px}
+.banner.show{display:block}
+
+/* Hero */
+.hero{border-radius:20px;padding:22px 22px 20px;color:#fff;background:var(--hero);transition:background .6s ease;
+  display:grid;grid-template-columns:1fr auto;gap:8px 20px;align-items:end}
+.hero .cond{font-size:15px;font-weight:600;opacity:.92;margin-bottom:2px}
+.hero .temp{font-family:var(--disp);font-weight:800;font-size:clamp(72px,18vw,112px);line-height:.95;letter-spacing:-.03em}
+.hero .temp small{font-size:.38em;font-weight:700;opacity:.8;margin-left:3px;letter-spacing:0}
+.hero .feel{font-size:15px;opacity:.92;margin-top:8px}
+.hero .side{text-align:right;font-size:14px;line-height:1.7;opacity:.95}
+.hero .side b{font-family:var(--disp);font-size:20px;font-weight:700}
+.range{grid-column:1/-1;margin-top:14px}
+.range .rb{position:relative;height:8px;border-radius:99px;background:rgba(255,255,255,.28)}
+.range .rb i{position:absolute;top:50%;width:16px;height:16px;border-radius:50%;background:#fff;transform:translate(-50%,-50%);box-shadow:0 0 0 3px rgba(0,0,0,.18)}
+.range .rl{display:flex;justify-content:space-between;font-size:13px;margin-top:8px;opacity:.92}
+
+/* Raster & Karten */
+.grid{display:grid;grid-template-columns:repeat(12,1fr);gap:12px;margin-top:12px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:16px 18px}
+.card h2{margin:0 0 10px;font-size:14px;font-weight:700;color:var(--ink2)}
+.span4{grid-column:span 4}.span6{grid-column:span 6}.span8{grid-column:span 8}.span12{grid-column:span 12}
+@media (max-width:820px){.span4,.span6,.span8{grid-column:span 12}}
+@media (min-width:821px) and (max-width:960px){.span4{grid-column:span 6}}
+.big{font-family:var(--disp);font-weight:800;font-size:34px;line-height:1;letter-spacing:-.02em}
+.big small{font-size:.45em;font-weight:700;color:var(--mute);margin-left:3px;letter-spacing:0}
+.kv{display:flex;justify-content:space-between;gap:10px;font-size:14px;padding:5px 0;border-top:1px solid var(--line)}
+.kv:first-of-type{border-top:0}
+.kv span:first-child{color:var(--ink2)}
+.kv b{font-weight:600}
+.bar{height:9px;border-radius:99px;background:var(--track);overflow:hidden;margin:10px 0 4px}
+.bar>i{display:block;height:100%;border-radius:99px;transition:width .6s ease}
+.hint{font-size:12.5px;color:var(--mute)}
+
+/* Wind */
+.windbox{display:flex;gap:20px;align-items:center;flex-wrap:wrap}
+.windbox svg{flex:none}
+.windnums{flex:1;min-width:170px}
+.windnums .row{margin-bottom:12px}
+.windnums .row .t{display:flex;justify-content:space-between;font-size:14px;color:var(--ink2)}
+.windnums .row .t b{color:var(--ink);font-family:var(--disp);font-size:18px}
+
+/* Pills */
+.chip{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600;padding:3px 10px;border-radius:99px;background:var(--surface2)}
+.chip i{width:8px;height:8px;border-radius:50%}
+.uvscale{display:flex;gap:3px;margin:12px 0 10px}
+.uvscale span{flex:1;height:8px;border-radius:3px;background:var(--track)}
+
+/* Tabelle */
+.tbl{width:100%;border-collapse:collapse;font-size:14px}
+.tbl th,.tbl td{padding:8px 6px;border-top:1px solid var(--line);text-align:right;white-space:nowrap}
+.tbl thead th{border-top:0;color:var(--mute);font-weight:600;font-size:13px}
+.tbl th:first-child,.tbl td:first-child{text-align:left;color:var(--ink2);font-weight:600}
+.tbl td small{color:var(--mute);margin-left:4px}
+.scroll{overflow-x:auto}
+
+/* Konfiguration */
+details.cfg{margin-top:20px}
+details.cfg summary{cursor:pointer;color:var(--mute);font-size:13px}
+.cfgbox{margin-top:8px;display:flex;gap:8px;flex-wrap:wrap}
+.cfgbox input{flex:1;min-width:200px;padding:9px 11px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink);font-size:14px}
+.cfgbox button{padding:9px 16px;border:0;border-radius:8px;background:var(--c-wind);color:#fff;font-weight:700;font-size:14px;cursor:pointer}
+.cfgbox button:focus-visible,.cfgbox input:focus-visible,summary:focus-visible{outline:3px solid var(--c-sun);outline-offset:2px}
+footer{margin-top:22px;font-size:12.5px;color:var(--mute);display:flex;flex-wrap:wrap;justify-content:space-between;gap:6px}
+footer a{color:inherit}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="top">
+    <div>
+      <h1>Wincheringen-Mont</h1>
+      <div class="sub">286 m ü. NHN · Mosel · AWEKAS-Station 24938</div>
+    </div>
+    <span class="status" id="status"><i></i><span id="statusTxt">Lade …</span></span>
+  </div>
+  <div class="stamp" id="stamp"></div>
+  <div class="banner" id="banner"></div>
+
+  <div id="app"></div>
+
+  <details class="cfg" id="cfg">
+    <summary>API-Key ändern</summary>
+    <div class="cfgbox">
+      <input id="keyIn" type="text" autocomplete="off" placeholder="AWEKAS API-Key">
+      <button id="keySave" type="button">Speichern und laden</button>
+    </div>
+    <div class="hint" style="margin-top:6px">Alternativ den Key an die Adresse anhängen: <span class="tn">…/wincheringen-wetter.html?key=DEIN_KEY</span></div>
+  </details>
+
+  <footer>
+    <span>Daten: <a href="https://www.awekas.at/" target="_blank" rel="noopener">AWEKAS</a> · aktualisiert sich alle 5 Minuten</span>
+    <span id="fetchInfo"></span>
+  </footer>
+</div>
+
+<script>window.AWEKAS_DATA=/*AWEKAS_JSON*/null;</script>
+<script>
+(function(){
+"use strict";
+
+var API = "https://api.awekas.at/current.php?key=";
+var REFRESH_MS = 5*60*1000;       // Limit der API: 240 Abrufe/Stunde, hier 12/Stunde
+var STALE_S = 30*60;              // Daten älter als 30 min gelten als veraltet
+
+// Letzter bekannter Stand (Screenshot 26.09.2026, 09:08). Wird nur gezeigt, wenn der Live-Abruf nicht klappt.
+var DEMO = {
+  fetchdate: 0, error: null,
+  current: {datatimestamp:0, timeoffset:7200, condition:0, temperature:9.1, dewpoint:5.4, humidity:77,
+    airpress_rel:1020.7, tendency:-1, precipitation:0, rainrate:0, itsraining:false,
+    windspeed:0, gustspeed:0, winddirection:16, uv:0.7, solar:103},
+  "1h": {precipitation_1h:0},
+  day: {temp_min:6.2, temp_max:13.8, hum_min:47, hum_max:87, airp_rel_min:1019.4, airp_rel_max:1020.7,
+    windspeed_min:0, windspeed_max:7.1, gustspeed_min:0, gustspeed_max:7.9, rainrate_max:0,
+    precipitation_24h:0, solar_max:103, uv_max:0.8}
+};
+
+var COND = {1:"Klar",2:"Sonnig",3:"Teils bewölkt",4:"Bewölkt",5:"Stark bewölkt",6:"Bedeckt",7:"Nebel",8:"Regenschauer",
+  9:"Starke Regenschauer",10:"Leichter Regen",11:"Regen",12:"Starker Regen",13:"Leichter Schneefall",14:"Schnee",
+  15:"Leichte Schneeschauer",16:"Schneeschauer",17:"Schneeregen",18:"Hagel",19:"Gewitter",20:"Sturm",21:"Gefrierender Regen",
+  23:"Nieselregen",24:"Starker Schneefall",25:"Starke Schneeschauer",31:"Sturmwarnung",32:"Warnung Starkregen",
+  33:"Warnung Nebel",34:"Warnung Hitze",35:"Warnung Frost",36:"Warnung Glätte",37:"Warnung Schneefall",
+  38:"Warnung Schneeverwehung",39:"Warnung Böen",40:"Warnung Orkan/Tornado",41:"Warnung Dauerregen",
+  42:"Warnung Überflutung",43:"Warnung Schneeregen",44:"Warnung Hagel"};
+var TEND = {"-2":["↓","stark fallend"],"-1":["↘","fallend"],"0":["→","gleichbleibend"],"1":["↗","steigend"],"2":["↑","stark steigend"]};
+var DIRS = ["N","NNO","NO","ONO","O","OSO","SO","SSO","S","SSW","SW","WSW","W","WNW","NW","NNW"];
+// Temperatur -> Farbe der Kopfkarte (dunkel genug für weiße Schrift)
+var STOPS = [[-10,[44,79,124]],[0,[53,106,143]],[10,[60,122,104]],[20,[138,122,42]],[30,[179,89,42]],[38,[156,47,43]]];
+
+function $(id){return document.getElementById(id)}
+function ok(v){return v!==null && v!==undefined && !isNaN(v)}
+function f(v,d){return ok(v)?Number(v).toFixed(d===undefined?1:d).replace(".",","):"–"}
+function clamp(v,a,b){return Math.max(a,Math.min(b,v))}
+function dirName(deg){return DIRS[Math.round(((deg%360)+360)%360/22.5)%16]}
+function pad(n){return String(n).padStart(2,"0")}
+function hhmm(ts,off){ if(!ok(ts)) return ""; var d=new Date((ts+(off||0))*1000); return pad(d.getUTCHours())+":"+pad(d.getUTCMinutes()); }
+function stamp(ts,off){ var d=new Date((ts+(off||0))*1000); return pad(d.getUTCDate())+"."+pad(d.getUTCMonth()+1)+"."+d.getUTCFullYear()+", "+pad(d.getUTCHours())+":"+pad(d.getUTCMinutes())+" Uhr"; }
+
+function heroColor(t){
+  if(!ok(t)) return "rgb(60,122,104)";
+  if(t<=STOPS[0][0]) t=STOPS[0][0];
+  for(var i=1;i<STOPS.length;i++){
+    if(t<=STOPS[i][0]){
+      var a=STOPS[i-1], b=STOPS[i], k=(t-a[0])/(b[0]-a[0]);
+      return "rgb("+[0,1,2].map(function(j){return Math.round(a[1][j]+(b[1][j]-a[1][j])*k)}).join(",")+")";
+    }
+  }
+  return "rgb("+STOPS[STOPS.length-1][1].join(",")+")";
+}
+function windchill(t,v){
+  if(t<=10 && v>4.8){ var p=Math.pow(v,.16); return 13.12+.6215*t-11.37*p+.3965*t*p; }
+  return t;
+}
+function uvInfo(u){
+  if(u<3) return {c:"var(--good)",t:"niedrig"};
+  if(u<6) return {c:"var(--warn)",t:"mäßig"};
+  if(u<8) return {c:"var(--serious)",t:"hoch"};
+  if(u<11) return {c:"var(--crit)",t:"sehr hoch"};
+  return {c:"var(--ext)",t:"extrem"};
+}
+function kv(l,v){return '<div class="kv"><span>'+l+'</span><b class="tn">'+v+'</b></div>'}
+
+/* ---------- Bausteine ---------- */
+function compass(deg,calm){
+  var r=66, cx=80, cy=80, a=(deg-90)*Math.PI/180;
+  var mx=cx+r*Math.cos(a), my=cy+r*Math.sin(a);
+  var tx=cx+(r-26)*Math.cos(a), ty=cy+(r-26)*Math.sin(a);
+  var ticks="";
+  for(var i=0;i<16;i++){
+    var an=i*22.5*Math.PI/180-Math.PI/2, l=(i%4===0)?10:5;
+    ticks+='<line x1="'+(cx+(r+4)*Math.cos(an))+'" y1="'+(cy+(r+4)*Math.sin(an))+'" x2="'+(cx+(r+4-l)*Math.cos(an))+'" y2="'+(cy+(r+4-l)*Math.sin(an))+'" stroke="var(--mute)" stroke-width="'+(i%4===0?2:1)+'"/>';
+  }
+  var lab='<g font-family="Source Sans 3,sans-serif" font-size="12" font-weight="700" fill="var(--ink2)" text-anchor="middle">'+
+    '<text x="80" y="29">N</text><text x="134" y="84">O</text><text x="80" y="140">S</text><text x="26" y="84">W</text></g>';
+  var pointer = calm ? '' :
+    '<line x1="'+cx+'" y1="'+cy+'" x2="'+tx+'" y2="'+ty+'" stroke="var(--c-wind)" stroke-width="4" stroke-linecap="round"/>'+
+    '<circle cx="'+mx+'" cy="'+my+'" r="9" fill="var(--c-wind)"/>'+
+    '<circle cx="'+cx+'" cy="'+cy+'" r="6" fill="var(--c-wind)"/>';
+  return '<svg width="160" height="160" viewBox="0 0 160 160" role="img" aria-label="Windrichtung">'+
+    '<circle cx="'+cx+'" cy="'+cy+'" r="'+r+'" fill="var(--surface2)" stroke="var(--track)" stroke-width="2"/>'+ticks+lab+pointer+
+    (calm?'<text x="80" y="86" text-anchor="middle" font-family="Source Sans 3,sans-serif" font-size="13" font-weight="700" fill="var(--mute)">windstill</text>':'')+
+    '</svg>';
+}
+function extremeRow(label,mn,mnTs,mx,mxTs,unit,dg,off){
+  if(!ok(mn)&&!ok(mx)) return "";
+  function cell(v,ts){ return ok(v)? f(v,dg)+' '+unit+(ok(ts)?'<small>'+hhmm(ts,off)+'</small>':'') : "–"; }
+  return '<tr><td>'+label+'</td><td>'+cell(mn,mnTs)+'</td><td>'+cell(mx,mxTs)+'</td></tr>';
+}
+
+/* ---------- Rendering ---------- */
+function render(json, live, note){
+  var c=json.current||{}, d=json.day||{}, h=json["1h"]||{}, off=c.timeoffset||0;
+
+  var st=$("status"), now=Math.floor(Date.now()/1000);
+  var age = live && ok(c.datatimestamp) ? now-c.datatimestamp : 0;
+  st.className="status"+(live?(age>STALE_S?" old":" live"):"");
+  $("statusTxt").textContent = !live ? "Beispieldaten" : (age>STALE_S ? "Daten veraltet" : "Live");
+  $("stamp").textContent = live && ok(c.datatimestamp) ? "Messung vom "+stamp(c.datatimestamp,off) : "Stand: 26.09.2026, 09:08 Uhr (Beispiel)";
+  var b=$("banner");
+  if(note){ b.textContent=note; b.classList.add("show"); } else b.classList.remove("show");
+
+  var t=c.temperature, wc=windchill(t,c.windspeed||0);
+  var feel = Math.abs(wc-t)>=.3 ? 'Gefühlt '+f(wc,1)+' °C' : 'Gefühlt wie gemessen';
+  var cond = COND[c.condition] || "";
+  var pos = (ok(d.temp_min)&&ok(d.temp_max)&&d.temp_max>d.temp_min) ? clamp((t-d.temp_min)/(d.temp_max-d.temp_min),0,1)*100 : 50;
+  document.documentElement.style.setProperty("--hero",heroColor(t));
+
+  var html="";
+
+  // Hero
+  html+='<section class="hero" aria-label="Temperatur">'+
+    '<div>'+(cond?'<div class="cond">'+cond+'</div>':'')+
+    '<div class="temp tn">'+f(t,1)+'<small>°C</small></div>'+
+    '<div class="feel">'+feel+'</div></div>'+
+    '<div class="side tn">Taupunkt<br><b>'+f(c.dewpoint,1)+' °C</b><br>Luftfeuchte<br><b>'+f(c.humidity,0)+' %</b></div>'+
+    (ok(d.temp_min)&&ok(d.temp_max)?
+      '<div class="range"><div class="rb"><i style="left:'+pos+'%"></i></div>'+
+      '<div class="rl tn"><span>Tief '+f(d.temp_min,1)+' °C · '+hhmm(d.temp_min_ts,off)+'</span><span>Hoch '+f(d.temp_max,1)+' °C · '+hhmm(d.temp_max_ts,off)+'</span></div></div>':'')+
+    '</section>';
+
+  html+='<div class="grid">';
+
+  // Wind
+  var calm=!(c.windspeed>=1||c.gustspeed>=1);
+  var wmax=Math.max(40,Math.ceil(((d.gustspeed_max||0)+5)/10)*10);
+  html+='<section class="card span8"><h2>Wind</h2><div class="windbox">'+compass(c.winddirection||0,calm)+
+    '<div class="windnums">'+
+      '<div class="row"><div class="t"><span>Wind aus '+(calm?'–':Math.round(c.winddirection)+'° '+dirName(c.winddirection))+'</span><b class="tn">'+f(c.windspeed,1)+' km/h</b></div>'+
+      '<div class="bar"><i style="width:'+clamp((c.windspeed||0)/wmax,0,1)*100+'%;background:var(--c-wind)"></i></div></div>'+
+      '<div class="row"><div class="t"><span>Böen</span><b class="tn">'+f(c.gustspeed,1)+' km/h</b></div>'+
+      '<div class="bar"><i style="width:'+clamp((c.gustspeed||0)/wmax,0,1)*100+'%;background:var(--c-gust)"></i></div></div>'+
+      '<div class="hint tn">Heute stärkste Böe '+f(d.gustspeed_max,1)+' km/h'+(ok(d.gustspeed_max_ts)?' um '+hhmm(d.gustspeed_max_ts,off):'')+'</div>'+
+    '</div></div></section>';
+
+  // Niederschlag
+  var pmax=Math.max(5,Math.ceil((c.precipitation||0)*1.5));
+  html+='<section class="card span4"><h2>Niederschlag</h2>'+
+    '<div class="big tn">'+f(c.precipitation,1)+'<small>mm</small></div>'+
+    '<div class="hint">seit Mitternacht'+(c.itsraining?' · <b style="color:var(--c-rain)">es regnet</b>':'')+'</div>'+
+    '<div class="bar"><i style="width:'+clamp((c.precipitation||0)/pmax,0,1)*100+'%;background:var(--c-rain)"></i></div>'+
+    kv("Regenrate",f(c.rainrate,1)+" mm/h")+
+    kv("Letzte Stunde",f(h.precipitation_1h,1)+" mm")+
+    kv("Letzte 24 Stunden",f(d.precipitation_24h,1)+" mm")+
+    '</section>';
+
+  // Luftdruck
+  var tend=TEND[String(c.tendency)];
+  var pf = ok(c.airpress_rel)? clamp((c.airpress_rel-980)/(1040-980),0,1)*100 : 0;
+  html+='<section class="card span4"><h2>Luftdruck</h2>'+
+    '<div class="big tn">'+f(c.airpress_rel,1)+'<small>hPa</small></div>'+
+    '<div class="hint">'+(tend? tend[0]+' '+tend[1] : '')+'</div>'+
+    '<div class="bar"><i style="width:'+pf+'%;background:var(--c-press)"></i></div>'+
+    '<div class="hint tn" style="display:flex;justify-content:space-between"><span>980</span><span>1010</span><span>1040</span></div>'+
+    kv("Heute",f(d.airp_rel_min,1)+" – "+f(d.airp_rel_max,1)+" hPa")+
+    '</section>';
+
+  // Sonne & UV
+  var uv=c.uv, ui=ok(uv)?uvInfo(uv):null, scale="";
+  for(var i=1;i<=11;i++) scale+='<span style="'+(ok(uv)&&i<=Math.round(uv)?'background:'+uvInfo(i).c:'')+'"></span>';
+  html+='<section class="card span4"><h2>Sonne</h2>'+
+    '<div class="big tn">'+f(uv,1)+'<small>UV-Index</small></div>'+
+    '<div class="uvscale" aria-hidden="true">'+scale+'</div>'+
+    (ui?'<span class="chip"><i style="background:'+ui.c+'"></i>UV '+ui.t+'</span>':'')+
+    kv("Solarstrahlung",f(c.solar,0)+" W/m²")+
+    kv("Heute maximal",f(d.solar_max,0)+" W/m² · UV "+f(d.uv_max,1))+
+    '</section>';
+
+  // Feuchte
+  html+='<section class="card span4"><h2>Luftfeuchte und Taupunkt</h2>'+
+    '<div class="big tn">'+f(c.humidity,0)+'<small>%</small></div>'+
+    '<div class="bar"><i style="width:'+clamp(c.humidity||0,0,100)+'%;background:var(--c-hum)"></i></div>'+
+    kv("Taupunkt",f(c.dewpoint,1)+" °C")+
+    kv("Heute",f(d.hum_min,0)+" – "+f(d.hum_max,0)+" %")+
+    '</section>';
+
+  // Zusatzsensoren (nur wenn Werte vorhanden)
+  var ex="";
+  if(ok(c.indoortemperature)) ex+=kv("Innen",f(c.indoortemperature,1)+" °C"+(ok(c.indoorhumidity)?" · "+f(c.indoorhumidity,0)+" %":""));
+  for(var s=1;s<=4;s++){
+    var tv = ok(c["soiltemp"+s]) ? c["soiltemp"+s] : c["temp"+s];
+    if(ok(tv)) ex+=kv("Bodentemperatur "+s,f(tv,1)+" °C");
+    if(ok(c["soilmoisture"+s])) ex+=kv("Bodenfeuchte "+s,f(c["soilmoisture"+s],0)+" cbar");
+    if(ok(c["humidity"+s])) ex+=kv("Zusatzfeuchte "+s,f(c["humidity"+s],0)+" %");
+  }
+  if(ok(c.leafwetness1)) ex+=kv("Blattnässe 1",f(c.leafwetness1,0));
+  if(ok(c.leafwetness2)) ex+=kv("Blattnässe 2",f(c.leafwetness2,0));
+  if(ok(c.airquality_pm2)) ex+=kv("Feinstaub PM2,5",f(c.airquality_pm2,1)+" µg/m³");
+  if(ok(c.airquality_pm10)) ex+=kv("Feinstaub PM10",f(c.airquality_pm10,1)+" µg/m³");
+  if(ok(c.snowheight)) ex+=kv("Schneehöhe",f(c.snowheight,0)+" cm");
+  if(ex) html+='<section class="card span12"><h2>Weitere Sensoren</h2>'+ex+'</section>';
+
+  // Tabelle Tageswerte
+  var rows=
+    extremeRow("Temperatur",d.temp_min,d.temp_min_ts,d.temp_max,d.temp_max_ts,"°C",1,off)+
+    extremeRow("Taupunkt",d.dewpoint_min,d.dewpoint_min_ts,d.dewpoint_max,d.dewpoint_max_ts,"°C",1,off)+
+    extremeRow("Luftfeuchte",d.hum_min,d.hum_min_ts,d.hum_max,d.hum_max_ts,"%",0,off)+
+    extremeRow("Luftdruck",d.airp_rel_min,d.airp_rel_min_ts,d.airp_rel_max,d.airp_rel_max_ts,"hPa",1,off)+
+    extremeRow("Wind",d.windspeed_min,d.windspeed_min_ts,d.windspeed_max,d.windspeed_max_ts,"km/h",1,off)+
+    extremeRow("Böen",d.gustspeed_min,d.gustspeed_min_ts,d.gustspeed_max,d.gustspeed_max_ts,"km/h",1,off)+
+    (ok(d.rainrate_max)?'<tr><td>Regenrate</td><td>–</td><td>'+f(d.rainrate_max,1)+' mm/h'+(d.rainrate_max>0&&ok(d.rainrate_max_ts)?'<small>'+hhmm(d.rainrate_max_ts,off)+'</small>':'')+'</td></tr>':'')+
+    (ok(d.solar_max)?'<tr><td>Solarstrahlung</td><td>–</td><td>'+f(d.solar_max,0)+' W/m²'+(ok(d.solar_max_ts)?'<small>'+hhmm(d.solar_max_ts,off)+'</small>':'')+'</td></tr>':'')+
+    (ok(d.uv_max)?'<tr><td>UV-Index</td><td>–</td><td>'+f(d.uv_max,1)+(ok(d.uv_max_ts)?'<small>'+hhmm(d.uv_max_ts,off)+'</small>':'')+'</td></tr>':'');
+  html+='<section class="card span12"><h2>Heute: Tiefst- und Höchstwerte</h2><div class="scroll"><table class="tbl tn">'+
+    '<thead><tr><th>Messgröße</th><th>Tiefstwert</th><th>Höchstwert</th></tr></thead><tbody>'+rows+'</tbody></table></div></section>';
+
+  html+='</div>';
+  $("app").innerHTML=html;
+  $("fetchInfo").textContent = live && ok(json.fetchdate) ? "Abruf "+hhmm(json.fetchdate,off)+" Uhr" : "";
+}
+
+/* ---------- Laden ---------- */
+function getKey(){
+  try{
+    var q=new URLSearchParams(location.search).get("key");
+    if(q) return q.replace(/ /g,"+");     // "+" im Key wird in URLs sonst zu Leerzeichen
+    return localStorage.getItem("awekas_key")||"";
+  }catch(e){return ""}
+}
+var key=getKey(), timer=null;
+
+function handle(j){
+  if(j.error){
+    var m={"invalid key":"Der API-Key ist ungültig.","maximum quota exceeded":"Das Abruflimit ist erreicht, bitte später erneut versuchen.","AWEKAS plus not active":"AWEKASplus ist im Benutzerprofil nicht aktiv."};
+    render(DEMO,false,(m[j.error]||("AWEKAS meldet: "+j.error))+" Es werden Beispieldaten gezeigt.");
+    return;
+  }
+  render(j,true,null);
+}
+function load(){
+  // 1. Weg: awekas.php neben dieser Seite (Key liegt auf dem Server, keine CORS-Probleme)
+  if(/^https?:/.test(location.protocol)){
+    fetch("awekas.php",{cache:"no-store"})
+      .then(function(r){ if(!r.ok) throw new Error("HTTP "+r.status); return r.json(); })
+      .then(handle)
+      .catch(direct);
+  } else direct();
+}
+// 2. Weg: direkter Abruf bei AWEKAS (klappt nur, wenn AWEKAS CORS erlaubt)
+function direct(){
+  if(!key){
+    render(DEMO,false,"Kein Live-Abruf möglich: awekas.php wurde nicht gefunden und es ist kein API-Key angegeben. Lege awekas.php neben diese Seite oder hänge ?key=DEIN_KEY an die Adresse an.");
+    $("cfg").open=true; return;
+  }
+  fetch(API+encodeURIComponent(key),{cache:"no-store"})
+    .then(function(r){ if(!r.ok) throw new Error("HTTP "+r.status); return r.json(); })
+    .then(handle)
+    .catch(function(){
+      render(DEMO,false,"Live-Abruf nicht möglich (Netzwerk oder Browser-Sperre). Wird die Datei lokal per file:// geöffnet, bitte stattdessen von einem Webserver laden. Es werden Beispieldaten gezeigt.");
+    });
+}
+function start(){
+  if(timer) clearInterval(timer);
+  // Eingebettete Daten (vom Launcher wetter.bat geschrieben): kein Abruf nötig, Seite lädt sich selbst neu
+  if(window.AWEKAS_DATA){
+    handle(window.AWEKAS_DATA);
+    $("cfg").style.display="none";
+    setTimeout(function(){ location.reload(); },REFRESH_MS+15000);
+    return;
+  }
+  load();
+  timer=setInterval(function(){ if(!document.hidden) load(); },REFRESH_MS);
+}
+
+$("keyIn").value=key;
+$("keySave").addEventListener("click",function(){
+  key=$("keyIn").value.trim();
+  try{localStorage.setItem("awekas_key",key)}catch(e){}
+  start();
+});
+document.addEventListener("visibilitychange",function(){ if(!document.hidden) load(); });
+start();
+})();
+</script>
+</body>
+</html>
