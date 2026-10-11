@@ -42,7 +42,7 @@ jobs:
           jq -e '.error == null and .current != null' _site/data.json > /dev/null
 
       - name: Seite bereitstellen
-        run: cp index.html _site/index.html
+        run: cp ./*.html _site/
 
       - uses: actions/configure-pages@v6
       - uses: actions/upload-pages-artifact@v5

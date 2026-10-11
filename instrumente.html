@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Messinstrumente Wincheringen-Mont</title>
+<meta name="description" content="Wetterstation Wincheringen-Mont als Messinstrumente">
+<style>
+:root{
+  --bg:#17303b; --panel:#24485a; --panel2:#1d3b4a; --ink:#eef4f6; --mute:#9db3bd; --line:rgba(255,255,255,.12);
+  --face:#f4f2eb; --faceink:#1d2a31; --facemute:#6b7880; --bezel1:#c9cfd3; --bezel2:#8d979d;
+  --good:#6fcf8a; --warn:#e8c34a; --crit:#e5655f;
+  --font:"Segoe UI",system-ui,-apple-system,Roboto,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;background:radial-gradient(1200px 600px at 50% -10%,#24485a 0%,var(--bg) 60%);color:var(--ink);font-family:var(--font);
+  padding:env(safe-area-inset-top,0) env(safe-area-inset-right,0) env(safe-area-inset-bottom,0) env(safe-area-inset-left,0);-webkit-font-smoothing:antialiased}
+.wrap{max-width:1100px;margin:0 auto;padding:12px 10px 30px}
+.top{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:6px 14px;margin:2px 4px 10px}
+.top h1{margin:0;font-size:clamp(18px,4vw,24px);font-weight:700;letter-spacing:.01em}
+.top .sub{font-size:13px;color:var(--mute)}
+.pill{display:inline-flex;align-items:center;gap:7px;padding:4px 11px;border-radius:99px;background:var(--panel2);border:1px solid var(--line);font-size:13px;font-weight:600}
+.pill i{width:8px;height:8px;border-radius:50%;background:var(--mute)}
+.pill.live i{background:var(--good)}.pill.old i{background:var(--warn)}
+.banner{display:none;margin:0 4px 10px;padding:9px 12px;border-radius:10px;background:var(--panel2);border:1px solid var(--line);border-left:4px solid var(--warn);color:#d6e2e7;font-size:14px}
+.banner.show{display:block}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(158px,1fr));gap:10px}
+.cell{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:8px 8px 10px;text-align:center;min-width:0}
+.cell svg{display:block;width:100%;height:auto}
+.cap{font-size:12.5px;color:var(--mute);margin-top:2px;line-height:1.35;min-height:2.7em}
+.cap b{color:var(--ink);font-weight:600}
+details{margin:18px 4px 0;color:var(--mute);font-size:13px}
+summary{cursor:pointer}
+textarea{width:100%;margin-top:8px;padding:9px 11px;border-radius:8px;border:1px solid var(--line);background:var(--panel2);color:var(--ink);font:13px/1.35 ui-monospace,Consolas,monospace}
+.btns{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}
+.btns button{padding:8px 15px;border:0;border-radius:8px;background:#4a86c5;color:#fff;font-weight:700;font-size:14px;cursor:pointer}
+.btns button.alt{background:var(--panel2);color:var(--ink);border:1px solid var(--line)}
+button:focus-visible,summary:focus-visible,a:focus-visible{outline:3px solid var(--warn);outline-offset:2px}
+footer{margin:18px 4px 0;font-size:12.5px;color:var(--mute);display:flex;flex-wrap:wrap;justify-content:space-between;gap:6px}
+footer a{color:#a9c9e6}
+.needle{transition:transform .8s cubic-bezier(.3,1.3,.5,1);transform-origin:100px 100px}
+@media (prefers-reduced-motion:reduce){.needle{transition:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <div>
+      <h1>Wincheringen-Mont</h1>
+      <div class="sub" id="stamp">286 m ü. NHN · AWEKAS-Station 24938</div>
+    </div>
+    <span class="pill" id="status"><i></i><span id="statusTxt">Lade …</span></span>
+  </div>
+  <div class="banner" id="banner"></div>
+
+  <div class="grid" id="app"></div>
+
+  <details id="man">
+    <summary>JSON manuell laden</summary>
+    <textarea id="jsonIn" rows="4" placeholder="Antwort von api.awekas.at/current.php hier einfügen"></textarea>
+    <div class="btns">
+      <button id="jsonShow" type="button">Anzeigen</button>
+      <button id="jsonPaste" type="button" class="alt">Aus Zwischenablage</button>
+    </div>
+  </details>
+
+  <footer>
+    <span>Daten: <a href="https://www.awekas.at/" target="_blank" rel="noopener">AWEKAS</a> · <a href="https://www.awekas.at/de/instrument.php4?id=24938&amp;reload=2#day" target="_blank" rel="noopener">Verlauf und Monatswerte</a> · <a href="index.html">Ausführliche Ansicht</a></span>
+    <span id="fetchInfo"></span>
+  </footer>
+</div>
+
+<script>window.AWEKAS_DATA=/*AWEKAS_JSON*/null;</script>
+<script>
+(function(){
+"use strict";
+var API="https://api.awekas.at/current.php?key=", REFRESH_MS=5*60*1000, STALE_S=30*60;
+var DEMO={fetchdate:0,error:null,current:{datatimestamp:0,timeoffset:7200,temperature:9.1,dewpoint:5.4,humidity:77,airpress_rel:1020.7,tendency:-1,
+  precipitation:0,rainrate:0,windspeed:0,gustspeed:0,winddirection:16,uv:0.7,solar:103},"1h":{precipitation_1h:0},
+  day:{temp_min:6.2,temp_max:13.8,dewpoint_min:4,dewpoint_max:7,hum_min:47,hum_max:87,airp_rel_min:1019.4,airp_rel_max:1020.7,windspeed_max:7.1,gustspeed_max:7.9,solar_max:103,uv_max:.8,precipitation_24h:0}};
+var DIRS=["N","NNO","NO","ONO","O","OSO","SO","SSO","S","SSW","SW","WSW","W","WNW","NW","NNW"];
+var TEND={"-2":"stark fallend ↓","-1":"fallend ↘","0":"gleichbleibend →","1":"steigend ↗","2":"stark steigend ↑"};
+
+function $(i){return document.getElementById(i)}
+function ok(v){return v!==null&&v!==undefined&&!isNaN(v)}
+function f(v,d){return ok(v)?Number(v).toFixed(d===undefined?1:d).replace(".",","):"–"}
+function clamp(v,a,b){return Math.max(a,Math.min(b,v))}
+function pad(n){return String(n).padStart(2,"0")}
+function dirName(d){return DIRS[Math.round(((d%360)+360)%360/22.5)%16]}
+function stamp(ts,off){var d=new Date((ts+(off||0))*1000);return pad(d.getUTCDate())+"."+pad(d.getUTCMonth()+1)+"."+d.getUTCFullYear()+", "+pad(d.getUTCHours())+":"+pad(d.getUTCMinutes())+" Uhr"}
+function windchill(t,v){if(t<=10&&v>4.8){var p=Math.pow(v,.16);return 13.12+.6215*t-11.37*p+.3965*t*p}return t}
+
+/* ---------- Instrumente (SVG) ---------- */
+var A0=-135, A1=135;
+function polar(a,r){var t=a*Math.PI/180;return[100+r*Math.sin(t),100-r*Math.cos(t)]}
+function arc(a,b,r){var p=polar(a,r),q=polar(b,r);return"M"+p[0].toFixed(2)+" "+p[1].toFixed(2)+" A"+r+" "+r+" 0 "+((b-a)>180?1:0)+" 1 "+q[0].toFixed(2)+" "+q[1].toFixed(2)}
+function ang(v,mn,mx){return A0+(A1-A0)*clamp((v-mn)/(mx-mn),0,1)}
+function bezel(){
+  return '<circle cx="100" cy="100" r="98" fill="#2a3a43"/><circle cx="100" cy="100" r="96" fill="'+'var(--bezel2)'+'"/>'+
+         '<circle cx="100" cy="100" r="92" fill="var(--bezel1)"/><circle cx="100" cy="100" r="88" fill="var(--face)"/>';
+}
+function readout(txt,y){
+  return '<rect x="66" y="'+(y-12)+'" width="68" height="24" rx="5" fill="#fff" stroke="#b9c1c6"/>'+
+         '<text x="100" y="'+(y+1)+'" text-anchor="middle" dominant-baseline="central" font-family="Segoe UI,system-ui,sans-serif" font-size="15" font-weight="700" fill="var(--faceink)">'+txt+'</text>';
+}
+function dial(o){
+  var s='<svg viewBox="0 0 200 200" role="img" aria-label="'+o.label+' '+o.text+'">'+bezel();
+  (o.zones||[]).forEach(function(z){
+    var a=ang(z[0],o.min,o.max), b=ang(z[1],o.min,o.max);
+    if(b>a+.1) s+='<path d="'+arc(a,b,84)+'" stroke="'+z[2]+'" stroke-width="6" fill="none"/>';
+  });
+  var n=Math.round((o.max-o.min)/o.step), m=o.minor||5, i, j;
+  for(i=0;i<=n;i++){
+    var v=o.min+i*o.step, a=ang(v,o.min,o.max), p1=polar(a,78), p2=polar(a,69), pl=polar(a,57);
+    s+='<line x1="'+p1[0].toFixed(1)+'" y1="'+p1[1].toFixed(1)+'" x2="'+p2[0].toFixed(1)+'" y2="'+p2[1].toFixed(1)+'" stroke="var(--faceink)" stroke-width="2"/>';
+    s+='<text x="'+pl[0].toFixed(1)+'" y="'+pl[1].toFixed(1)+'" text-anchor="middle" dominant-baseline="central" font-family="Segoe UI,system-ui,sans-serif" font-size="11" font-weight="600" fill="var(--faceink)">'+o.fmt(v)+'</text>';
+    if(i<n) for(j=1;j<m;j++){
+      var a2=ang(v+o.step*j/m,o.min,o.max), q1=polar(a2,78), q2=polar(a2,74);
+      s+='<line x1="'+q1[0].toFixed(1)+'" y1="'+q1[1].toFixed(1)+'" x2="'+q2[0].toFixed(1)+'" y2="'+q2[1].toFixed(1)+'" stroke="var(--facemute)" stroke-width="1"/>';
+    }
+  }
+  s+='<text x="100" y="124" text-anchor="middle" font-family="Segoe UI,system-ui,sans-serif" font-size="12" font-weight="700" fill="var(--faceink)">'+o.label+'</text>'+
+     '<text x="100" y="136" text-anchor="middle" font-family="Segoe UI,system-ui,sans-serif" font-size="10" fill="var(--facemute)">'+o.unit+'</text>';
+  s+=readout(o.text,159);
+  var a=ok(o.value)?ang(o.value,o.min,o.max):A0;
+  s+='<g class="needle" style="transform:rotate('+a.toFixed(1)+'deg);opacity:'+(ok(o.value)?1:.25)+'">'+
+     '<polygon points="97,104 100,34 103,104" fill="#c2392f"/><polygon points="97,104 103,104 100,116" fill="#c2392f"/></g>'+
+     '<circle cx="100" cy="100" r="7" fill="#2b3a42"/><circle cx="100" cy="100" r="2.5" fill="#9aa5ab"/></svg>';
+  return '<div class="cell">'+s+'<div class="cap">'+(o.cap||"")+'</div></div>';
+}
+function compass(deg,calm,speedTxt){
+  var s='<svg viewBox="0 0 200 200" role="img" aria-label="Windrichtung">'+bezel(), i;
+  for(i=0;i<16;i++){
+    var a=i*22.5, major=i%4===0, p1=polar(a,84), p2=polar(a,major?70:(i%2===0?75:79));
+    s+='<line x1="'+p1[0].toFixed(1)+'" y1="'+p1[1].toFixed(1)+'" x2="'+p2[0].toFixed(1)+'" y2="'+p2[1].toFixed(1)+'" stroke="var(--faceink)" stroke-width="'+(major?2.4:1.2)+'"/>';
+  }
+  [["N",0],["O",90],["S",180],["W",270]].forEach(function(l){
+    var p=polar(l[1],58);
+    s+='<text x="'+p[0].toFixed(1)+'" y="'+p[1].toFixed(1)+'" text-anchor="middle" dominant-baseline="central" font-family="Segoe UI,system-ui,sans-serif" font-size="15" font-weight="800" fill="'+(l[0]==="N"?"#c2392f":"var(--faceink)")+'">'+l[0]+'</text>';
+  });
+  s+='<text x="100" y="124" text-anchor="middle" font-family="Segoe UI,system-ui,sans-serif" font-size="12" font-weight="700" fill="var(--faceink)">Windrichtung</text>';
+  s+='<g class="needle" style="transform:rotate('+(calm?0:deg)+'deg);opacity:'+(calm?.25:1)+'">'+
+     '<polygon points="95,100 100,26 105,100" fill="#c2392f"/><polygon points="95,100 105,100 100,150" fill="#7d8a91"/></g>'+
+     '<circle cx="100" cy="100" r="7" fill="#2b3a42"/><circle cx="100" cy="100" r="2.5" fill="#9aa5ab"/></svg>';
+  return '<div class="cell">'+s+'<div class="cap">'+speedTxt+'</div></div>';
+}
+function tubes(day,rate,h1,h24){
+  var dmax=Math.max(10,Math.ceil((day||0)*1.4/5)*5), rmax=Math.max(10,Math.ceil((rate||0)*1.4/5)*5);
+  function tube(x,val,max,label,unit,color){
+    var H=92, y0=46, fh=H*clamp((val||0)/max,0,1), t='', k;
+    t+='<rect x="'+x+'" y="'+y0+'" width="34" height="'+H+'" rx="6" fill="#e6eaec" stroke="#8d979d" stroke-width="2"/>';
+    t+='<rect x="'+(x+2)+'" y="'+(y0+H-fh-2).toFixed(1)+'" width="30" height="'+(fh+0).toFixed(1)+'" rx="4" fill="'+color+'"/>';
+    for(k=1;k<4;k++){var yy=y0+H*k/4; t+='<line x1="'+x+'" y1="'+yy+'" x2="'+(x+9)+'" y2="'+yy+'" stroke="#8d979d" stroke-width="1.5"/><line x1="'+(x+25)+'" y1="'+yy+'" x2="'+(x+34)+'" y2="'+yy+'" stroke="#8d979d" stroke-width="1.5"/>';}
+    t+='<text x="'+(x+17)+'" y="34" text-anchor="middle" font-family="Segoe UI,system-ui,sans-serif" font-size="15" font-weight="700" fill="var(--faceink)">'+f(val,1)+'</text>';
+    t+='<text x="'+(x+17)+'" y="154" text-anchor="middle" font-family="Segoe UI,system-ui,sans-serif" font-size="12" font-weight="700" fill="var(--faceink)">'+label+'</text>';
+    t+='<text x="'+(x+17)+'" y="166" text-anchor="middle" font-family="Segoe UI,system-ui,sans-serif" font-size="10" fill="var(--facemute)">'+unit+'</text>';
+    return t;
+  }
+  var s='<svg viewBox="0 0 200 200" role="img" aria-label="Niederschlag">'+bezel()+
+    tube(44,day,dmax,"Heute","mm","#3d7fc4")+tube(122,rate,rmax,"Rate","mm/h","#5aa5d6")+'</svg>';
+  return '<div class="cell">'+s+'<div class="cap">Letzte Stunde <b>'+f(h1,1)+' mm</b><br>Letzte 24 h <b>'+f(h24,1)+' mm</b></div></div>';
+}
+
+/* ---------- Darstellung ---------- */
+var manual=false, hold=false;
+function range(a,b,u,dg){return ok(a)&&ok(b)?"Tief <b>"+f(a,dg)+"</b> · Hoch <b>"+f(b,dg)+"</b> "+u:""}
+function render(json,live,note){
+  var c=json.current||{}, d=json.day||{}, h=json["1h"]||{}, off=c.timeoffset||0, now=Math.floor(Date.now()/1000);
+  var age=live&&ok(c.datatimestamp)?now-c.datatimestamp:0;
+  $("status").className="pill"+(live?(age>STALE_S?" old":" live"):"");
+  $("statusTxt").textContent=!live?"Beispieldaten":(age>STALE_S?"Daten veraltet":(manual?"Manuell geladen":"Live"));
+  $("stamp").textContent=live&&ok(c.datatimestamp)?"Messung vom "+stamp(c.datatimestamp,off):"286 m ü. NHN · AWEKAS-Station 24938";
+  var b=$("banner"); if(note){b.textContent=note;b.classList.add("show")}else b.classList.remove("show");
+  $("fetchInfo").textContent=live&&ok(json.fetchdate)?"Abruf "+pad(new Date((json.fetchdate+off)*1000).getUTCHours())+":"+pad(new Date((json.fetchdate+off)*1000).getUTCMinutes())+" Uhr":"";
+
+  var fi=function(v){return String(v)}, wmax=[20,40,60,100,150].filter(function(m){return m>=(d.gustspeed_max||0)*1.15}).concat([200])[0];
+  var wstep=wmax/4, wc=ok(c.windchill)?c.windchill:windchill(c.temperature,c.windspeed||0);
+  var tz=[[-20,0,"#4a86c5"],[0,15,"#4aa6a0"],[15,25,"#8cc152"],[25,32,"#f0a030"],[32,40,"#d9534f"]];
+  var wz=[[0,29,"#4aa66a"],[29,50,"#d8b54a"],[50,75,"#e0803a"],[75,200,"#d9534f"]];
+  var uvT=ok(c.uv)?(c.uv<3?"niedrig":c.uv<6?"mäßig":c.uv<8?"hoch":c.uv<11?"sehr hoch":"extrem"):"";
+  var html="";
+  html+=dial({label:"Temperatur",unit:"°C",min:-20,max:40,step:10,minor:5,zones:tz,fmt:fi,value:c.temperature,text:f(c.temperature,1),cap:range(d.temp_min,d.temp_max,"°C",1)});
+  html+=dial({label:"Gefühlt",unit:"°C",min:-20,max:40,step:10,minor:5,zones:tz,fmt:fi,value:wc,text:f(wc,1),cap:"Windchill"});
+  html+=dial({label:"Taupunkt",unit:"°C",min:-10,max:25,step:5,minor:5,zones:[[-10,10,"#4aa66a"],[10,16,"#d8b54a"],[16,20,"#e0803a"],[20,25,"#d9534f"]],fmt:fi,value:c.dewpoint,text:f(c.dewpoint,1),cap:range(d.dewpoint_min,d.dewpoint_max,"°C",1)});
+  html+=dial({label:"Luftfeuchte",unit:"%",min:0,max:100,step:20,minor:4,zones:[[0,30,"#e0a030"],[30,70,"#4aa66a"],[70,100,"#4a86c5"]],fmt:fi,value:c.humidity,text:f(c.humidity,0),cap:range(d.hum_min,d.hum_max,"%",0)});
+  html+=compass(c.winddirection||0,!(c.windspeed>=1||c.gustspeed>=1)||!ok(c.winddirection),(ok(c.winddirection)&&(c.windspeed>=1||c.gustspeed>=1)?"<b style=\"font-size:15px\">"+Math.round(c.winddirection)+"° "+dirName(c.winddirection)+"</b><br>Wind aus "+dirName(c.winddirection):"<b style=\"font-size:15px\">windstill</b>"));
+  html+=dial({label:"Wind",unit:"km/h",min:0,max:wmax,step:wstep,minor:5,zones:wz,fmt:function(v){return f(v,0)},value:c.windspeed,text:f(c.windspeed,1),cap:ok(d.windspeed_max)?"Max heute <b>"+f(d.windspeed_max,1)+"</b> km/h":""});
+  html+=dial({label:"Böen",unit:"km/h",min:0,max:wmax,step:wstep,minor:5,zones:wz,fmt:function(v){return f(v,0)},value:c.gustspeed,text:f(c.gustspeed,1),cap:ok(d.gustspeed_max)?"Max heute <b>"+f(d.gustspeed_max,1)+"</b> km/h":""});
+  html+=dial({label:"Luftdruck",unit:"hPa",min:950,max:1050,step:20,minor:4,zones:[[950,1000,"#4a86c5"],[1000,1020,"#4aa66a"],[1020,1050,"#d8b54a"]],fmt:fi,value:c.airpress_rel,text:f(c.airpress_rel,1),
+    cap:(TEND[String(c.tendency)]||"")+(ok(d.airp_rel_min)&&ok(d.airp_rel_max)?"<br>"+range(d.airp_rel_min,d.airp_rel_max,"",1):"")});
+  html+=dial({label:"Solarstrahlung",unit:"W/m²",min:0,max:1200,step:300,minor:3,zones:[[0,400,"#e8cf7a"],[400,800,"#f0a030"],[800,1200,"#d9534f"]],fmt:fi,value:c.solar,text:f(c.solar,0),cap:ok(d.solar_max)?"Max heute <b>"+f(d.solar_max,0)+"</b> W/m²":""});
+  html+=dial({label:"UV-Index",unit:"",min:0,max:12,step:2,minor:2,zones:[[0,3,"#4aa66a"],[3,6,"#d8d04a"],[6,8,"#e0803a"],[8,11,"#d9534f"],[11,12,"#8e5bc2"]],fmt:fi,value:c.uv,text:f(c.uv,1),cap:(uvT?"UV <b>"+uvT+"</b>":"")+(ok(d.uv_max)?"<br>Max heute <b>"+f(d.uv_max,1)+"</b>":"")});
+  html+=tubes(c.precipitation,c.rainrate,h.precipitation_1h,d.precipitation_24h);
+  $("app").innerHTML=html;
+}
+
+/* ---------- Laden ---------- */
+function key(){try{var q=new URLSearchParams(location.search).get("key");return q?q.replace(/ /g,"+"):""}catch(e){return""}}
+function fallback(note){
+  var last=null; try{last=JSON.parse(localStorage.getItem("awekas_last")||"null")}catch(e){}
+  if(last&&last.current){manual=true;render(last,true,note+" Gezeigt werden die zuletzt gespeicherten Daten.")}
+  else render(DEMO,false,note+" Es werden Beispieldaten gezeigt.");
+}
+function handle(j){
+  if(j.error){
+    var m={"invalid key":"Der API-Key ist ungültig.","maximum quota exceeded":"Das Abruflimit ist erreicht.","AWEKAS plus not active":"AWEKASplus ist im Profil nicht aktiv."};
+    fallback(m[j.error]||("AWEKAS meldet: "+j.error)); return;
+  }
+  try{localStorage.setItem("awekas_last",JSON.stringify(j))}catch(e){}
+  render(j,true,null);
+}
+function parseTree(text){
+  var o={},cur=o;
+  text.split(/\r?\n/).forEach(function(line){
+    var t=line.trim(); if(!t) return;
+    var m=t.match(/^(\S+)\s+(.*)$/); if(!m){cur=o[t]={};return}
+    var v=m[2].trim();
+    if(v==="null")v=null;else if(v==="true")v=true;else if(v==="false")v=false;
+    else if(/^-?\d+(\.\d+)?$/.test(v))v=Number(v);else v=v.replace(/^"|"$/g,"");
+    cur[m[1]]=v;
+  });
+  return o;
+}
+function showText(text){
+  var j=null,a=text.indexOf("{"),z=text.lastIndexOf("}");
+  if(a>=0&&z>a){try{j=JSON.parse(text.slice(a,z+1))}catch(e){}}
+  if(!j) j=parseTree(text);
+  if(!j||!j.current) throw new Error("kein JSON");
+  hold=true;manual=true;handle(j);
+}
+function getJson(u){return fetch(u,{cache:"no-store"}).then(function(r){if(!r.ok)throw new Error("HTTP "+r.status);return r.json()})}
+function direct(){
+  var k=key();
+  if(!k){fallback("Kein Live-Abruf möglich. Unter „JSON manuell laden“ gibt es einen Weg ohne Server.");$("man").open=true;return}
+  getJson(API+encodeURIComponent(k)).then(handle).catch(function(){
+    fallback("Direkter Abruf nicht möglich (AWEKAS erlaubt Abrufe von fremden Seiten vermutlich nicht).");$("man").open=true;
+  });
+}
+function load(){
+  if(hold) return;
+  if(/^https?:/.test(location.protocol)){
+    getJson("data.json?t="+Date.now()).catch(function(){return getJson("awekas.php")}).then(handle).catch(direct);
+  } else direct();
+}
+$("jsonShow").addEventListener("click",function(){
+  try{showText($("jsonIn").value)}
+  catch(e){$("banner").textContent="Der eingefügte Text konnte nicht gelesen werden. Bitte die komplette AWEKAS-Antwort einfügen.";$("banner").classList.add("show")}
+});
+$("jsonPaste").addEventListener("click",function(){
+  if(!navigator.clipboard||!navigator.clipboard.readText){$("jsonIn").focus();return}
+  navigator.clipboard.readText().then(function(t){$("jsonIn").value=t;$("jsonShow").click()}).catch(function(){$("jsonIn").focus()});
+});
+document.addEventListener("visibilitychange",function(){if(!document.hidden)load()});
+
+var hs=location.hash.length>1?location.hash.slice(1):"";
+if(hs){try{showText(decodeURIComponent(hs))}catch(e){fallback("Die Daten in der Adresse konnten nicht gelesen werden.")}}
+else if(window.AWEKAS_DATA){handle(window.AWEKAS_DATA);setTimeout(function(){location.reload()},REFRESH_MS+15000)}
+else{load();setInterval(function(){if(!document.hidden)load()},REFRESH_MS)}
+})();
+</script>
+</body>
+</html>
