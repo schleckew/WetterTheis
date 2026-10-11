@@ -1,0 +1,52 @@
+name: Wetterdaten aktualisieren
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'     # alle 5 Minuten (GitHub kann das um einige Minuten verzoegern)
+  workflow_dispatch:           # manuell startbar im Reiter "Actions"
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Daten bei AWEKAS abholen
+        env:
+          AWEKAS_KEY: ${{ secrets.AWEKAS_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p _site
+          # Key ist meist schon URL-kodiert (%2B ...), sonst kodieren
+          if printf '%s' "$AWEKAS_KEY" | grep -Eq '%[0-9A-Fa-f]{2}'; then
+            KEY="$AWEKAS_KEY"
+          else
+            KEY="$(printf '%s' "$AWEKAS_KEY" | jq -sRr @uri)"
+          fi
+          curl -fsS --max-time 20 "https://api.awekas.at/current.php?key=${KEY}" -o _site/data.json
+          # Bei AWEKAS-Fehler (z. B. invalid key) abbrechen, damit die letzte gute Version online bleibt
+          jq -e '.error == null and .current != null' _site/data.json > /dev/null
+
+      - name: Seite bereitstellen
+        run: cp index.html _site/index.html
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v4
