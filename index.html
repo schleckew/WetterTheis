@@ -108,6 +108,10 @@ details.cfg summary{cursor:pointer;color:var(--mute);font-size:13px}
 .cfgbox input{flex:1;min-width:200px;padding:9px 11px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink);font-size:14px}
 .cfgbox button{padding:9px 16px;border:0;border-radius:8px;background:var(--c-wind);color:#fff;font-weight:700;font-size:14px;cursor:pointer}
 .cfgbox button:focus-visible,.cfgbox input:focus-visible,summary:focus-visible{outline:3px solid var(--c-sun);outline-offset:2px}
+textarea#jsonIn{width:100%;margin-top:8px;padding:9px 11px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink);font:13px/1.35 ui-monospace,Consolas,monospace}
+.cfgbox input[readonly]{font:12px ui-monospace,Consolas,monospace}
+.cfgbox button.alt{background:var(--surface2);color:var(--ink);border:1px solid var(--line)}
+.steps{margin:8px 0 0;padding-left:20px;color:var(--ink2);font-size:14px}
 footer{margin-top:22px;font-size:12.5px;color:var(--mute);display:flex;flex-wrap:wrap;justify-content:space-between;gap:6px}
 footer a{color:inherit}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
@@ -135,6 +139,25 @@ footer a{color:inherit}
       <button id="keySave" type="button">Speichern und laden</button>
     </div>
     <div class="hint" style="margin-top:6px">Alternativ den Key an die Adresse anhängen: <span class="tn">…/wincheringen-wetter.html?key=DEIN_KEY</span></div>
+  </details>
+
+  <details class="cfg" id="man">
+    <summary>JSON manuell laden (ohne Server, ohne CORS)</summary>
+    <ol class="steps">
+      <li>Die AWEKAS-Adresse (<span class="tn">api.awekas.at/current.php?key=…</span>) im Browser öffnen, das JSON erscheint als Text.</li>
+      <li>Das Lesezeichen „Wetter anzeigen“ antippen. Es öffnet dieses Dashboard mit den Daten.</li>
+      <li>Alternativ: Text kopieren, hier einfügen und „Anzeigen“ drücken.</li>
+    </ol>
+    <textarea id="jsonIn" rows="4" placeholder='JSON hier einfügen, z. B. {"fetchdate": 1596280165, "error": null, "current": {…}}'></textarea>
+    <div class="cfgbox">
+      <button id="jsonShow" type="button">Anzeigen</button>
+      <button id="jsonPaste" type="button" class="alt">Aus Zwischenablage</button>
+    </div>
+    <div class="hint" style="margin-top:12px">Code für das Lesezeichen (als Adresse eines neuen Lesezeichens eintragen):</div>
+    <div class="cfgbox">
+      <input id="bmCode" type="text" readonly aria-label="Lesezeichen-Code">
+      <button id="bmCopy" type="button" class="alt">Kopieren</button>
+    </div>
   </details>
 
   <footer>
@@ -243,7 +266,7 @@ function render(json, live, note){
   var st=$("status"), now=Math.floor(Date.now()/1000);
   var age = live && ok(c.datatimestamp) ? now-c.datatimestamp : 0;
   st.className="status"+(live?(age>STALE_S?" old":" live"):"");
-  $("statusTxt").textContent = !live ? "Beispieldaten" : (age>STALE_S ? "Daten veraltet" : "Live");
+  $("statusTxt").textContent = !live ? "Beispieldaten" : (age>STALE_S ? "Daten veraltet" : (manual ? "Manuell geladen" : "Live"));
   $("stamp").textContent = live && ok(c.datatimestamp) ? "Messung vom "+stamp(c.datatimestamp,off) : "Stand: 26.09.2026, 09:08 Uhr (Beispiel)";
   var b=$("banner");
   if(note){ b.textContent=note; b.classList.add("show"); } else b.classList.remove("show");
@@ -365,41 +388,67 @@ function getKey(){
     return localStorage.getItem("awekas_key")||"";
   }catch(e){return ""}
 }
-var key=getKey(), timer=null;
+var key=getKey(), timer=null, manual=false, hold=false;
+var TIP=" Tipp: Unter „JSON manuell laden“ gibt es einen Weg ohne Server.";
 
+// Zeigt zuletzt gespeicherte Daten, sonst Beispieldaten
+function fallback(note){
+  var last=null;
+  try{ last=JSON.parse(localStorage.getItem("awekas_last")||"null"); }catch(e){}
+  if(last && last.current){ manual=true; render(last,true,note+" Gezeigt werden die zuletzt gespeicherten Daten."); }
+  else render(DEMO,false,note+" Es werden Beispieldaten gezeigt.");
+}
 function handle(j){
   if(j.error){
     var m={"invalid key":"Der API-Key ist ungültig.","maximum quota exceeded":"Das Abruflimit ist erreicht, bitte später erneut versuchen.","AWEKAS plus not active":"AWEKASplus ist im Benutzerprofil nicht aktiv."};
-    render(DEMO,false,(m[j.error]||("AWEKAS meldet: "+j.error))+" Es werden Beispieldaten gezeigt.");
+    fallback(m[j.error]||("AWEKAS meldet: "+j.error));
     return;
   }
+  try{ localStorage.setItem("awekas_last",JSON.stringify(j)); }catch(e){}
   render(j,true,null);
 }
+// JSON-Text (auch mit Drumherum) anzeigen
+function showText(text){
+  var a=text.indexOf("{"), z=text.lastIndexOf("}");
+  if(a<0||z<=a) throw new Error("kein JSON");
+  var j=JSON.parse(text.slice(a,z+1));
+  hold=true; manual=true; handle(j);
+}
 function load(){
-  // 1. Weg: awekas.php neben dieser Seite (Key liegt auf dem Server, keine CORS-Probleme)
+  if(hold) return;
+  // Reihenfolge: data.json (GitHub Pages) -> awekas.php (PHP/Python-Proxy) -> direkter Abruf bei AWEKAS
   if(/^https?:/.test(location.protocol)){
-    fetch("awekas.php",{cache:"no-store"})
-      .then(function(r){ if(!r.ok) throw new Error("HTTP "+r.status); return r.json(); })
+    getJson("data.json?t="+Date.now())
+      .catch(function(){ return getJson("awekas.php"); })
       .then(handle)
       .catch(direct);
   } else direct();
 }
-// 2. Weg: direkter Abruf bei AWEKAS (klappt nur, wenn AWEKAS CORS erlaubt)
+function getJson(u){
+  return fetch(u,{cache:"no-store"}).then(function(r){ if(!r.ok) throw new Error("HTTP "+r.status); return r.json(); });
+}
+// 3. Weg: direkter Abruf bei AWEKAS (klappt nur, wenn AWEKAS CORS erlaubt)
 function direct(){
   if(!key){
-    render(DEMO,false,"Kein Live-Abruf möglich: awekas.php wurde nicht gefunden und es ist kein API-Key angegeben. Lege awekas.php neben diese Seite oder hänge ?key=DEIN_KEY an die Adresse an.");
-    $("cfg").open=true; return;
+    fallback("Kein Live-Abruf möglich: kein API-Key in der Adresse."+TIP);
+    $("man").open=true; return;
   }
   fetch(API+encodeURIComponent(key),{cache:"no-store"})
     .then(function(r){ if(!r.ok) throw new Error("HTTP "+r.status); return r.json(); })
     .then(handle)
     .catch(function(){
-      render(DEMO,false,"Live-Abruf nicht möglich (Netzwerk oder Browser-Sperre). Wird die Datei lokal per file:// geöffnet, bitte stattdessen von einem Webserver laden. Es werden Beispieldaten gezeigt.");
+      fallback("Direkter Abruf nicht möglich (AWEKAS erlaubt Abrufe von fremden Seiten vermutlich nicht, oder die Seite läuft lokal per file://)."+TIP);
+      $("man").open=true;
     });
 }
 function start(){
   if(timer) clearInterval(timer);
-  // Eingebettete Daten (vom Launcher wetter.bat geschrieben): kein Abruf nötig, Seite lädt sich selbst neu
+  // Daten aus der Adresse (Lesezeichen) oder eingebettet (wetter.bat)
+  var hs=location.hash.length>1 ? location.hash.slice(1) : "";
+  if(hs){
+    try{ showText(decodeURIComponent(hs)); return; }
+    catch(e){ fallback("Die Daten in der Adresse konnten nicht gelesen werden."); return; }
+  }
   if(window.AWEKAS_DATA){
     handle(window.AWEKAS_DATA);
     $("cfg").style.display="none";
@@ -414,8 +463,26 @@ $("keyIn").value=key;
 $("keySave").addEventListener("click",function(){
   key=$("keyIn").value.trim();
   try{localStorage.setItem("awekas_key",key)}catch(e){}
-  start();
+  hold=false; start();
 });
+
+// Manuelles Laden
+$("jsonShow").addEventListener("click",function(){
+  try{ showText($("jsonIn").value); }
+  catch(e){ $("banner").textContent="Das eingefügte JSON konnte nicht gelesen werden. Bitte den kompletten Text der AWEKAS-Antwort einfügen."; $("banner").classList.add("show"); }
+});
+$("jsonPaste").addEventListener("click",function(){
+  if(!navigator.clipboard||!navigator.clipboard.readText){ $("jsonIn").focus(); return; }
+  navigator.clipboard.readText().then(function(t){ $("jsonIn").value=t; $("jsonShow").click(); }).catch(function(){ $("jsonIn").focus(); });
+});
+// Lesezeichen-Code: liest den JSON-Text der geöffneten AWEKAS-Seite und öffnet dieses Dashboard damit
+var base=location.href.split("#")[0].split("?")[0];
+$("bmCode").value="javascript:(function(){var e=document.querySelector('pre')||document.body;location.href='"+base+"#'+encodeURIComponent(e.innerText)})()";
+$("bmCopy").addEventListener("click",function(){
+  var f=$("bmCode"); f.select();
+  try{ navigator.clipboard.writeText(f.value); }catch(e){ document.execCommand("copy"); }
+});
+
 document.addEventListener("visibilitychange",function(){ if(!document.hidden) load(); });
 start();
 })();
