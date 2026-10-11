@@ -271,7 +271,7 @@ function render(json, live, note){
   var b=$("banner");
   if(note){ b.textContent=note; b.classList.add("show"); } else b.classList.remove("show");
 
-  var t=c.temperature, wc=windchill(t,c.windspeed||0);
+  var t=c.temperature, wc=ok(c.windchill)?c.windchill:windchill(t,c.windspeed||0);
   var feel = Math.abs(wc-t)>=.3 ? 'Gefühlt '+f(wc,1)+' °C' : 'Gefühlt wie gemessen';
   var cond = COND[c.condition] || "";
   var pos = (ok(d.temp_min)&&ok(d.temp_max)&&d.temp_max>d.temp_min) ? clamp((t-d.temp_min)/(d.temp_max-d.temp_min),0,1)*100 : 50;
@@ -335,6 +335,8 @@ function render(json, live, note){
     (ui?'<span class="chip"><i style="background:'+ui.c+'"></i>UV '+ui.t+'</span>':'')+
     kv("Solarstrahlung",f(c.solar,0)+" W/m²")+
     kv("Heute maximal",f(d.solar_max,0)+" W/m² · UV "+f(d.uv_max,1))+
+    (ok(c.brightness)?kv("Helligkeit",f(c.brightness,0)+" lx"):"")+
+    (ok(c.suntime)?kv("Sonnenscheindauer",f(c.suntime,1)+" h"):"")+
     '</section>';
 
   // Feuchte
@@ -348,6 +350,7 @@ function render(json, live, note){
   // Zusatzsensoren (nur wenn Werte vorhanden)
   var ex="";
   if(ok(c.indoortemperature)) ex+=kv("Innen",f(c.indoortemperature,1)+" °C"+(ok(c.indoorhumidity)?" · "+f(c.indoorhumidity,0)+" %":""));
+  if(ok(d.intemp_min)&&ok(d.intemp_max)) ex+=kv("Innen heute",f(d.intemp_min,1)+" – "+f(d.intemp_max,1)+" °C"+(ok(d.inhum_min)&&ok(d.inhum_max)?" · "+f(d.inhum_min,0)+" – "+f(d.inhum_max,0)+" %":""));
   for(var s=1;s<=4;s++){
     var tv = ok(c["soiltemp"+s]) ? c["soiltemp"+s] : c["temp"+s];
     if(ok(tv)) ex+=kv("Bodentemperatur "+s,f(tv,1)+" °C");
@@ -358,6 +361,8 @@ function render(json, live, note){
   if(ok(c.leafwetness2)) ex+=kv("Blattnässe 2",f(c.leafwetness2,0));
   if(ok(c.airquality_pm2)) ex+=kv("Feinstaub PM2,5",f(c.airquality_pm2,1)+" µg/m³");
   if(ok(c.airquality_pm10)) ex+=kv("Feinstaub PM10",f(c.airquality_pm10,1)+" µg/m³");
+  if(ok(d.airquality_pm2)) ex+=kv("PM2,5 (24 h Mittel)",f(d.airquality_pm2,1)+" µg/m³");
+  if(ok(d.airquality_pm10)) ex+=kv("PM10 (24 h Mittel)",f(d.airquality_pm10,1)+" µg/m³");
   if(ok(c.snowheight)) ex+=kv("Schneehöhe",f(c.snowheight,0)+" cm");
   if(ex) html+='<section class="card span12"><h2>Weitere Sensoren</h2>'+ex+'</section>';
 
@@ -374,6 +379,11 @@ function render(json, live, note){
     (ok(d.uv_max)?'<tr><td>UV-Index</td><td>–</td><td>'+f(d.uv_max,1)+(ok(d.uv_max_ts)?'<small>'+hhmm(d.uv_max_ts,off)+'</small>':'')+'</td></tr>':'');
   html+='<section class="card span12"><h2>Heute: Tiefst- und Höchstwerte</h2><div class="scroll"><table class="tbl tn">'+
     '<thead><tr><th>Messgröße</th><th>Tiefstwert</th><th>Höchstwert</th></tr></thead><tbody>'+rows+'</tbody></table></div></section>';
+
+  // Verlauf und Historie: liefert die API nicht, daher Link zur AWEKAS-Originalseite
+  html+='<section class="card span12"><h2>Verlauf und Monatswerte</h2>'+
+    '<div class="hint" style="margin-bottom:10px">Die AWEKAS-Schnittstelle liefert nur aktuelle Werte und die Tageswerte. Das 24-Stunden-Diagramm sowie die Monats- und Jahreswerte gibt es auf der Originalseite.</div>'+
+    '<div class="cfgbox"><a href="https://www.awekas.at/de/instrument.php4?id=24938&amp;reload=2#day" target="_blank" rel="noopener" style="padding:9px 16px;border-radius:8px;background:var(--c-wind);color:#fff;font-weight:700;font-size:14px;text-decoration:none">Verlauf und Monatswerte bei AWEKAS</a></div></section>';
 
   html+='</div>';
   $("app").innerHTML=html;
