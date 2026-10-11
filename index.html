@@ -407,11 +407,27 @@ function handle(j){
   try{ localStorage.setItem("awekas_last",JSON.stringify(j)); }catch(e){}
   render(j,true,null);
 }
-// JSON-Text (auch mit Drumherum) anzeigen
+// Firefox kopiert aus der JSON-Ansicht eine Baumdarstellung ("name  wert", Abschnitte allein auf einer Zeile)
+function parseTree(text){
+  var o={}, cur=o;
+  text.split(/\r?\n/).forEach(function(line){
+    var t=line.trim(); if(!t) return;
+    var m=t.match(/^(\S+)\s+(.*)$/);
+    if(!m){ cur=o[t]={}; return; }
+    var v=m[2].trim();
+    if(v==="null") v=null; else if(v==="true") v=true; else if(v==="false") v=false;
+    else if(/^-?\d+(\.\d+)?$/.test(v)) v=Number(v);
+    else v=v.replace(/^"|"$/g,"");
+    cur[m[1]]=v;
+  });
+  return o;
+}
+// JSON-Text (auch mit Drumherum oder als Firefox-Baumansicht) anzeigen
 function showText(text){
-  var a=text.indexOf("{"), z=text.lastIndexOf("}");
-  if(a<0||z<=a) throw new Error("kein JSON");
-  var j=JSON.parse(text.slice(a,z+1));
+  var j=null, a=text.indexOf("{"), z=text.lastIndexOf("}");
+  if(a>=0 && z>a){ try{ j=JSON.parse(text.slice(a,z+1)); }catch(e){} }
+  if(!j) j=parseTree(text);
+  if(!j || !j.current) throw new Error("kein JSON");
   hold=true; manual=true; handle(j);
 }
 function load(){
@@ -469,7 +485,7 @@ $("keySave").addEventListener("click",function(){
 // Manuelles Laden
 $("jsonShow").addEventListener("click",function(){
   try{ showText($("jsonIn").value); }
-  catch(e){ $("banner").textContent="Das eingefügte JSON konnte nicht gelesen werden. Bitte den kompletten Text der AWEKAS-Antwort einfügen."; $("banner").classList.add("show"); }
+  catch(e){ $("banner").textContent="Der eingefügte Text konnte nicht gelesen werden. Bitte die komplette AWEKAS-Antwort einfügen. In Firefox am besten im Reiter „Rohdaten“ auf „Kopieren“ klicken."; $("banner").classList.add("show"); }
 });
 $("jsonPaste").addEventListener("click",function(){
   if(!navigator.clipboard||!navigator.clipboard.readText){ $("jsonIn").focus(); return; }
