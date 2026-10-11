@@ -46,8 +46,12 @@ body{margin:0;min-height:100%;background:var(--bg);color:var(--ink);font-family:
 .switch a[aria-current="page"]{background:var(--c-wind);border-color:transparent;color:#fff}
 .switch a[aria-current="page"] small{color:rgba(255,255,255,.85)}
 .switch a:focus-visible{outline:3px solid var(--c-sun);outline-offset:2px}
+.hist{display:inline-flex;align-items:center;gap:7px;padding:7px 13px;border-radius:999px;font-size:13px;font-weight:700;text-decoration:none;color:#fff;background:var(--c-wind);align-self:center;white-space:nowrap}
+.hist svg{width:16px;height:16px;flex:none}
+.hist:hover{filter:brightness(1.1)}
+.hist:focus-visible{outline:3px solid var(--c-sun);outline-offset:2px}
 /* Kopf */
-.top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:12px}
+.top{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:12px}
 .top h1{font-family:var(--disp);font-weight:800;font-size:clamp(22px,4.5vw,30px);margin:0;letter-spacing:-.01em}
 .top .sub{color:var(--ink2);font-size:14px}
 .status{display:inline-flex;align-items:center;gap:7px;padding:5px 11px;border-radius:999px;background:var(--surface);border:1px solid var(--line);font-size:13px;font-weight:600;white-space:nowrap}
@@ -137,6 +141,7 @@ footer a{color:inherit}
       <h1>Wincheringen-Mont</h1>
       <div class="sub">286 m ü. NHN · Mosel · AWEKAS-Station 24938</div>
     </div>
+    <a class="hist" href="https://www.awekas.at/de/instrument.php4?id=24938&amp;reload=2#day" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 20h18"/><path d="M4 15l5-5 4 3 7-8"/></svg>Verlauf &amp; Monatswerte</a>
     <span style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span class="status" id="status"><i></i><span id="statusTxt">Lade …</span></span><button id="refreshNow" type="button" class="status" style="cursor:pointer;color:inherit;font-family:inherit" title="Daten jetzt aktualisieren">↻ Aktualisieren</button></span>
   </div>
   <div class="stamp" id="stamp"></div>

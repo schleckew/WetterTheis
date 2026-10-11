@@ -26,6 +26,15 @@ body{margin:0;min-height:100vh;background:radial-gradient(1200px 600px at 50% -1
 .switch a[aria-current="page"]{background:#4a86c5;border-color:transparent;color:#fff}
 .switch a[aria-current="page"] small{color:rgba(255,255,255,.88)}
 .switch a:focus-visible{outline:3px solid var(--warn);outline-offset:2px}
+.hist{display:inline-flex;align-items:center;gap:7px;padding:7px 13px;border-radius:999px;font-size:13px;font-weight:700;text-decoration:none;color:#fff;background:#4a86c5;align-self:center;white-space:nowrap}
+.hist svg{width:16px;height:16px;flex:none}
+.hist:hover{filter:brightness(1.1)}
+.hist:focus-visible{outline:3px solid var(--warn);outline-offset:2px}
+.histcard{margin-top:10px;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:16px 18px}
+.histcard h2{margin:0 0 8px;font-size:14px;font-weight:700;color:#c9d8de}
+.histcard p{margin:0 0 12px;font-size:13px;color:var(--mute)}
+.histbtn{display:inline-block;padding:9px 16px;border-radius:8px;background:#4a86c5;color:#fff;font-weight:700;font-size:14px;text-decoration:none}
+.histbtn:focus-visible{outline:3px solid var(--warn);outline-offset:2px}
 .top{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:6px 14px;margin:2px 4px 10px}
 .top h1{margin:0;font-size:clamp(18px,4vw,24px);font-weight:700;letter-spacing:.01em}
 .top .sub{font-size:13px;color:var(--mute)}
@@ -61,11 +70,18 @@ footer a{color:#a9c9e6}
       <h1>Wincheringen-Mont</h1>
       <div class="sub" id="stamp">286 m ü. NHN · AWEKAS-Station 24938</div>
     </div>
+    <a class="hist" href="https://www.awekas.at/de/instrument.php4?id=24938&amp;reload=2#day" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 20h18"/><path d="M4 15l5-5 4 3 7-8"/></svg>Verlauf &amp; Monatswerte</a>
     <span style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span class="pill" id="status"><i></i><span id="statusTxt">Lade …</span></span><button id="refreshNow" type="button" class="pill" style="cursor:pointer;color:inherit;font-family:inherit" title="Daten jetzt aktualisieren">↻ Aktualisieren</button></span>
   </div>
   <div class="banner" id="banner"></div>
 
   <div class="grid" id="app"></div>
+
+  <section class="histcard">
+    <h2>Verlauf und Monatswerte</h2>
+    <p>Die AWEKAS-Schnittstelle liefert nur aktuelle Werte und die Tageswerte. Das 24-Stunden-Diagramm sowie die Monats- und Jahreswerte gibt es auf der Originalseite.</p>
+    <a class="histbtn" href="https://www.awekas.at/de/instrument.php4?id=24938&amp;reload=2#day" target="_blank" rel="noopener">Verlauf und Monatswerte bei AWEKAS</a>
+  </section>
 
   <details id="man">
     <summary>JSON manuell laden</summary>
