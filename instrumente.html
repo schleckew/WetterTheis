@@ -118,8 +118,8 @@ footer a{color:#a9c9e6}
 "use strict";
 var API="https://api.awekas.at/current.php?key=", REFRESH_MS=5*60*1000, STALE_S=30*60;
 var DEMO={fetchdate:0,error:null,current:{datatimestamp:0,timeoffset:7200,temperature:9.1,dewpoint:5.4,humidity:77,airpress_rel:1020.7,tendency:-1,
-  precipitation:0,rainrate:0,windspeed:0,gustspeed:0,winddirection:16,uv:0.7,solar:103},"1h":{precipitation_1h:0},
-  day:{temp_min:6.2,temp_max:13.8,dewpoint_min:4,dewpoint_max:7,hum_min:47,hum_max:87,airp_rel_min:1019.4,airp_rel_max:1020.7,windspeed_max:7.1,gustspeed_max:7.9,solar_max:103,uv_max:.8,precipitation_24h:0}};
+  precipitation:0,rainrate:0,windspeed:0,gustspeed:0,winddirection:16,uv:0.7,solar:103,indoortemperature:20.4,indoorhumidity:48},"1h":{precipitation_1h:0},
+  day:{temp_min:6.2,temp_max:13.8,dewpoint_min:4,dewpoint_max:7,hum_min:47,hum_max:87,airp_rel_min:1019.4,airp_rel_max:1020.7,windspeed_max:7.1,gustspeed_max:7.9,solar_max:103,uv_max:.8,intemp_min:19.9,intemp_max:20.4,precipitation_24h:0}};
 var DIRS=["N","NNO","NO","ONO","O","OSO","SO","SSO","S","SSW","SW","WSW","W","WNW","NW","NNW"];
 var TEND={"-2":"stark fallend ↓","-1":"fallend ↘","0":"gleichbleibend →","1":"steigend ↗","2":"stark steigend ↑"};
 
@@ -145,7 +145,34 @@ function readout(txt,y){
   return '<rect x="66" y="'+(y-12)+'" width="68" height="24" rx="5" fill="#fff" stroke="#b9c1c6"/>'+
          '<text x="100" y="'+(y+1)+'" text-anchor="middle" dominant-baseline="central" font-family="Segoe UI,system-ui,sans-serif" font-size="15" font-weight="700" fill="var(--faceink)">'+txt+'</text>';
 }
+/* dynamische Skala: passt Min/Max/Schritt an aktuellen Wert und Tageswerte an */
+function niceScale(vals,o){
+  var v=vals.filter(ok);
+  if(!v.length) return o.fallback;
+  var lo=Math.min.apply(null,v), hi=Math.max.apply(null,v), span=hi-lo, minSpan=o.minSpan||1;
+  if(span<minSpan){var mid=(lo+hi)/2; lo=mid-minSpan/2; hi=mid+minSpan/2; span=minSpan}
+  var pad=span*(o.pad==null?.15:o.pad); lo-=pad; hi+=pad;
+  if(o.hardMin!=null&&lo<o.hardMin){hi+=o.hardMin-lo; lo=o.hardMin}
+  if(o.hardMax!=null&&hi>o.hardMax){lo-=hi-o.hardMax; hi=o.hardMax}
+  if(o.hardMin!=null&&lo<o.hardMin) lo=o.hardMin;
+  var cands=[1,2,5,10,20,50,100,200,500], i, st, mn, mx, n;
+  for(i=0;i<cands.length;i++){
+    st=cands[i]; mn=Math.floor(lo/st)*st; mx=Math.ceil(hi/st)*st;
+    if(o.hardMin!=null) mn=Math.max(mn,o.hardMin);
+    if(o.hardMax!=null) mx=Math.min(mx,o.hardMax);
+    n=Math.round((mx-mn)/st);
+    if(n>=2&&n<=(o.maxTicks||6)) break;
+  }
+  var minor={1:5,2:4,5:5,10:5,20:4,50:5,100:5,200:4,500:5}[st]||5;
+  return {min:mn,max:mx,step:st,minor:minor};
+}
+function marker(v,mn,mx,color){
+  var a=ang(v,mn,mx), p=polar(a,79), q=polar(a-3.6,91), r=polar(a+3.6,91);
+  return '<polygon points="'+p[0].toFixed(1)+','+p[1].toFixed(1)+' '+q[0].toFixed(1)+','+q[1].toFixed(1)+' '+r[0].toFixed(1)+','+r[1].toFixed(1)+'" fill="'+color+'" stroke="#fff" stroke-width="1"/>';
+}
+var C_LO="#2f7be0", C_HI="#d9433b";
 function dial(o){
+  if(o.sc){o.min=o.sc.min;o.max=o.sc.max;o.step=o.sc.step;o.minor=o.sc.minor}
   var s='<svg viewBox="0 0 200 200" role="img" aria-label="'+o.label+' '+o.text+'">'+bezel();
   (o.zones||[]).forEach(function(z){
     var a=ang(z[0],o.min,o.max), b=ang(z[1],o.min,o.max);
@@ -161,6 +188,9 @@ function dial(o){
       s+='<line x1="'+q1[0].toFixed(1)+'" y1="'+q1[1].toFixed(1)+'" x2="'+q2[0].toFixed(1)+'" y2="'+q2[1].toFixed(1)+'" stroke="var(--facemute)" stroke-width="1"/>';
     }
   }
+  if(ok(o.lo)&&ok(o.hi)&&o.hi>o.lo) s+='<path d="'+arc(ang(o.lo,o.min,o.max),ang(o.hi,o.min,o.max),90)+'" stroke="var(--faceink)" stroke-opacity=".4" stroke-width="2.5" fill="none"/>';
+  if(ok(o.lo)) s+=marker(o.lo,o.min,o.max,C_LO);
+  if(ok(o.hi)) s+=marker(o.hi,o.min,o.max,C_HI);
   s+='<text x="100" y="124" text-anchor="middle" font-family="Segoe UI,system-ui,sans-serif" font-size="12" font-weight="700" fill="var(--faceink)">'+o.label+'</text>'+
      '<text x="100" y="136" text-anchor="middle" font-family="Segoe UI,system-ui,sans-serif" font-size="10" fill="var(--facemute)">'+o.unit+'</text>';
   s+=readout(o.text,159);
@@ -169,6 +199,19 @@ function dial(o){
      '<polygon points="97,104 100,34 103,104" fill="#c2392f"/><polygon points="97,104 103,104 100,116" fill="#c2392f"/></g>'+
      '<circle cx="100" cy="100" r="7" fill="#2b3a42"/><circle cx="100" cy="100" r="2.5" fill="#9aa5ab"/></svg>';
   return '<div class="cell">'+s+'<div class="cap">'+(o.cap||"")+'</div></div>';
+}
+function niceStep(span){
+  var raw=span/4, mag=Math.pow(10,Math.floor(Math.log(raw)/Math.LN10)), r=raw/mag, step;
+  if(r<1.5) step=1; else if(r<3) step=2; else if(r<7) step=5; else step=10;
+  return step*mag;
+}
+function dynRange(lo,hi,pad,stepHint){
+  if(!ok(lo)||!ok(hi)){ return null; }
+  var span=Math.max(hi-lo,stepHint||1);
+  var min=Math.floor((lo-span*pad)/stepHint)*stepHint;
+  var max=Math.ceil((hi+span*pad)/stepHint)*stepHint;
+  if(max-min<stepHint*4){ var mid=(max+min)/2; min=mid-stepHint*2; max=mid+stepHint*2; }
+  return {min:min,max:max,step:niceStep(max-min)};
 }
 function compass(deg,calm,speedTxt){
   var s='<svg viewBox="0 0 200 200" role="img" aria-label="Windrichtung">'+bezel(), i;
@@ -205,7 +248,7 @@ function tubes(day,rate,h1,h24){
 
 /* ---------- Darstellung ---------- */
 var manual=false, hold=false;
-function range(a,b,u,dg){return ok(a)&&ok(b)?"Tief <b>"+f(a,dg)+"</b> · Hoch <b>"+f(b,dg)+"</b> "+u:""}
+function range(a,b,u,dg){return ok(a)&&ok(b)?"<span style=\"color:"+C_LO+"\">▲ Tief</span> <b>"+f(a,dg)+"</b> · <span style=\"color:"+C_HI+"\">▲ Hoch</span> <b>"+f(b,dg)+"</b> "+u:""}
 function render(json,live,note){
   var c=json.current||{}, d=json.day||{}, h=json["1h"]||{}, off=c.timeoffset||0, now=Math.floor(Date.now()/1000);
   var age=live&&ok(c.datatimestamp)?now-c.datatimestamp:0;
@@ -220,18 +263,28 @@ function render(json,live,note){
   var tz=[[-20,0,"#4a86c5"],[0,15,"#4aa6a0"],[15,25,"#8cc152"],[25,32,"#f0a030"],[32,40,"#d9534f"]];
   var wz=[[0,29,"#4aa66a"],[29,50,"#d8b54a"],[50,75,"#e0803a"],[75,200,"#d9534f"]];
   var uvT=ok(c.uv)?(c.uv<3?"niedrig":c.uv<6?"mäßig":c.uv<8?"hoch":c.uv<11?"sehr hoch":"extrem"):"";
+  var ts=niceScale([c.temperature,d.temp_min,d.temp_max,wc],{minSpan:10,pad:.12,maxTicks:8,fallback:{min:-10,max:30,step:10,minor:5}});
+  var ds=niceScale([c.dewpoint,d.dewpoint_min,d.dewpoint_max],{minSpan:10,pad:.12,maxTicks:8,fallback:{min:-10,max:25,step:5,minor:5}});
+  var is={min:18,max:28,step:2,minor:4};
+  var hs=niceScale([c.humidity,d.hum_min,d.hum_max],{minSpan:20,pad:.1,hardMin:0,hardMax:100,maxTicks:6,fallback:{min:0,max:100,step:20,minor:4}});
+  var ps=niceScale([c.airpress_rel,d.airp_rel_min,d.airp_rel_max],{minSpan:20,pad:.15,maxTicks:6,fallback:{min:980,max:1040,step:10,minor:5}});
+  var ss=niceScale([0,c.solar,d.solar_max],{minSpan:200,pad:.12,hardMin:0,maxTicks:6,fallback:{min:0,max:1000,step:200,minor:4}});
+  var us=niceScale([0,c.uv,d.uv_max],{minSpan:4,pad:.2,hardMin:0,maxTicks:6,fallback:{min:0,max:12,step:2,minor:2}});
+  var ws=niceScale([0,c.windspeed,c.gustspeed,d.gustspeed_max,d.windspeed_max],{minSpan:10,pad:.15,hardMin:0,maxTicks:5,fallback:{min:0,max:40,step:10,minor:5}});
+  wmax=ws.max; wstep=ws.step;
   var html="";
-  html+=dial({label:"Temperatur",unit:"°C",min:-20,max:40,step:10,minor:5,zones:tz,fmt:fi,value:c.temperature,text:f(c.temperature,1),cap:range(d.temp_min,d.temp_max,"°C",1)});
-  html+=dial({label:"Gefühlt",unit:"°C",min:-20,max:40,step:10,minor:5,zones:tz,fmt:fi,value:wc,text:f(wc,1),cap:"Windchill"});
-  html+=dial({label:"Taupunkt",unit:"°C",min:-10,max:25,step:5,minor:5,zones:[[-10,10,"#4aa66a"],[10,16,"#d8b54a"],[16,20,"#e0803a"],[20,25,"#d9534f"]],fmt:fi,value:c.dewpoint,text:f(c.dewpoint,1),cap:range(d.dewpoint_min,d.dewpoint_max,"°C",1)});
-  html+=dial({label:"Luftfeuchte",unit:"%",min:0,max:100,step:20,minor:4,zones:[[0,30,"#e0a030"],[30,70,"#4aa66a"],[70,100,"#4a86c5"]],fmt:fi,value:c.humidity,text:f(c.humidity,0),cap:range(d.hum_min,d.hum_max,"%",0)});
+  html+=dial({label:"Temperatur",unit:"°C",sc:ts,lo:d.temp_min,hi:d.temp_max,zones:tz,fmt:fi,value:c.temperature,text:f(c.temperature,1),cap:range(d.temp_min,d.temp_max,"°C",1)});
+  html+=dial({label:"Gefühlt",unit:"°C",sc:ts,zones:tz,fmt:fi,value:wc,text:f(wc,1),cap:"Windchill"});
+  html+=dial({label:"Taupunkt",unit:"°C",sc:ds,lo:d.dewpoint_min,hi:d.dewpoint_max,zones:[[-10,10,"#4aa66a"],[10,16,"#d8b54a"],[16,20,"#e0803a"],[20,25,"#d9534f"]],fmt:fi,value:c.dewpoint,text:f(c.dewpoint,1),cap:range(d.dewpoint_min,d.dewpoint_max,"°C",1)});
+  html+=dial({label:"Luftfeuchte",unit:"%",sc:hs,lo:d.hum_min,hi:d.hum_max,zones:[[0,30,"#e0a030"],[30,70,"#4aa66a"],[70,100,"#4a86c5"]],fmt:fi,value:c.humidity,text:f(c.humidity,0),cap:range(d.hum_min,d.hum_max,"%",0)});
+  if(ok(c.indoortemperature)) html+=dial({label:"Innen",unit:"°C",sc:is,lo:d.intemp_min,hi:d.intemp_max,zones:[[-50,18,"#4a86c5"],[18,24,"#4aa66a"],[24,28,"#e0a030"],[28,60,"#d9534f"]],fmt:fi,value:c.indoortemperature,text:f(c.indoortemperature,1),cap:range(d.intemp_min,d.intemp_max,"°C",1)+(ok(c.indoorhumidity)?"<br>Luftfeuchte <b>"+f(c.indoorhumidity,0)+"</b> %":"")});
   html+=compass(c.winddirection||0,!(c.windspeed>=1||c.gustspeed>=1)||!ok(c.winddirection),(ok(c.winddirection)&&(c.windspeed>=1||c.gustspeed>=1)?"<b style=\"font-size:15px\">"+Math.round(c.winddirection)+"° "+dirName(c.winddirection)+"</b><br>Wind aus "+dirName(c.winddirection):"<b style=\"font-size:15px\">windstill</b>"));
-  html+=dial({label:"Wind",unit:"km/h",min:0,max:wmax,step:wstep,minor:5,zones:wz,fmt:function(v){return f(v,0)},value:c.windspeed,text:f(c.windspeed,1),cap:ok(d.windspeed_max)?"Max heute <b>"+f(d.windspeed_max,1)+"</b> km/h":""});
-  html+=dial({label:"Böen",unit:"km/h",min:0,max:wmax,step:wstep,minor:5,zones:wz,fmt:function(v){return f(v,0)},value:c.gustspeed,text:f(c.gustspeed,1),cap:ok(d.gustspeed_max)?"Max heute <b>"+f(d.gustspeed_max,1)+"</b> km/h":""});
-  html+=dial({label:"Luftdruck",unit:"hPa",min:950,max:1050,step:20,minor:4,zones:[[950,1000,"#4a86c5"],[1000,1020,"#4aa66a"],[1020,1050,"#d8b54a"]],fmt:fi,value:c.airpress_rel,text:f(c.airpress_rel,1),
+  html+=dial({label:"Wind",unit:"km/h",sc:ws,hi:d.windspeed_max,zones:wz,fmt:function(v){return f(v,0)},value:c.windspeed,text:f(c.windspeed,1),cap:ok(d.windspeed_max)?"Max heute <b>"+f(d.windspeed_max,1)+"</b> km/h":""});
+  html+=dial({label:"Böen",unit:"km/h",sc:ws,hi:d.gustspeed_max,zones:wz,fmt:function(v){return f(v,0)},value:c.gustspeed,text:f(c.gustspeed,1),cap:ok(d.gustspeed_max)?"Max heute <b>"+f(d.gustspeed_max,1)+"</b> km/h":""});
+  html+=dial({label:"Luftdruck",unit:"hPa",sc:ps,lo:d.airp_rel_min,hi:d.airp_rel_max,zones:[[950,1000,"#4a86c5"],[1000,1020,"#4aa66a"],[1020,1050,"#d8b54a"]],fmt:fi,value:c.airpress_rel,text:f(c.airpress_rel,1),
     cap:(TEND[String(c.tendency)]||"")+(ok(d.airp_rel_min)&&ok(d.airp_rel_max)?"<br>"+range(d.airp_rel_min,d.airp_rel_max,"",1):"")});
-  html+=dial({label:"Solarstrahlung",unit:"W/m²",min:0,max:1200,step:300,minor:3,zones:[[0,400,"#e8cf7a"],[400,800,"#f0a030"],[800,1200,"#d9534f"]],fmt:fi,value:c.solar,text:f(c.solar,0),cap:ok(d.solar_max)?"Max heute <b>"+f(d.solar_max,0)+"</b> W/m²":""});
-  html+=dial({label:"UV-Index",unit:"",min:0,max:12,step:2,minor:2,zones:[[0,3,"#4aa66a"],[3,6,"#d8d04a"],[6,8,"#e0803a"],[8,11,"#d9534f"],[11,12,"#8e5bc2"]],fmt:fi,value:c.uv,text:f(c.uv,1),cap:(uvT?"UV <b>"+uvT+"</b>":"")+(ok(d.uv_max)?"<br>Max heute <b>"+f(d.uv_max,1)+"</b>":"")});
+  html+=dial({label:"Solarstrahlung",unit:"W/m²",sc:ss,hi:d.solar_max,zones:[[0,400,"#e8cf7a"],[400,800,"#f0a030"],[800,1200,"#d9534f"]],fmt:fi,value:c.solar,text:f(c.solar,0),cap:ok(d.solar_max)?"Max heute <b>"+f(d.solar_max,0)+"</b> W/m²":""});
+  html+=dial({label:"UV-Index",unit:"",sc:us,hi:d.uv_max,zones:[[0,3,"#4aa66a"],[3,6,"#d8d04a"],[6,8,"#e0803a"],[8,11,"#d9534f"],[11,12,"#8e5bc2"]],fmt:fi,value:c.uv,text:f(c.uv,1),cap:(uvT?"UV <b>"+uvT+"</b>":"")+(ok(d.uv_max)?"<br>Max heute <b>"+f(d.uv_max,1)+"</b>":"")});
   html+=tubes(c.precipitation,c.rainrate,h.precipitation_1h,d.precipitation_24h);
   $("app").innerHTML=html;
 }
