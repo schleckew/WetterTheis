@@ -2,7 +2,7 @@
 (function(){
 "use strict";
 var CSS="#warn,#outlook{--a-card:var(--surface,var(--panel,#fff));--a-card2:var(--surface2,var(--panel2,#eee));--a-ink:var(--ink,#111);--a-ink2:var(--ink2,var(--mute,#666));--a-mute:var(--mute,#777);--a-line:var(--line,rgba(128,128,128,.25));--a-rain:var(--c-rain,#7fb2ff);--a-sun:var(--c-sun,#e8c34a);--a-wind:var(--c-wind,#7fb2e8);--a-track:var(--track,rgba(128,128,128,.3));--a-warn:var(--warn,#d6a100);--a-serious:var(--serious,#e8883a);--a-crit:var(--crit,#e5655f);--a-ext:var(--ext,#a794d6);--a-disp:var(--disp,var(--font,system-ui,sans-serif));--a-body:var(--body,var(--font,system-ui,sans-serif))}\n#warn,#outlook{font-family:var(--a-body);color:var(--a-ink)}\n.ol .card{background:var(--a-card);border:1px solid var(--a-line);border-radius:16px;padding:16px 18px;min-width:0}\n.ol #ol-radar{height:340px;border-radius:12px;overflow:hidden;border:1px solid var(--a-line);background:var(--a-card2)}\n.ol .leaflet-container{font-family:var(--a-body)}\n/* Vorhersage, Warnungen, Sonne und Mond */\n#warn{margin-top:12px;display:grid;gap:10px}\n.wcard{background:var(--a-card);border:1px solid var(--a-line);border-left:6px solid var(--a-warn);border-radius:14px;padding:12px 14px}\n.wcard.s-moderate{border-left-color:var(--a-serious)}\n.wcard.s-severe{border-left-color:var(--a-crit)}\n.wcard.s-extreme{border-left-color:var(--a-ext)}\n.wcard b{display:block;font-size:15px}\n.wcard .when{font-size:13px;color:var(--a-ink2);margin-top:2px}\n.wcard details{margin-top:6px;font-size:14px;color:var(--a-ink2)}\n.wcard summary{cursor:pointer;font-weight:600;color:var(--a-wind)}\n.wcard p{margin:6px 0 0;line-height:1.45}\n.ol{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}\n.ol .full{grid-column:1/-1}\n@media (max-width:640px){.ol{grid-template-columns:1fr}}\n.ol h2{margin:0 0 10px;font-family:var(--a-disp);font-size:16px}\n.ol .chipok{display:inline-block;margin-left:8px;font:600 12px var(--a-body);padding:2px 9px;border-radius:999px;background:var(--a-card2);color:var(--a-ink2);vertical-align:middle}\n.hours{display:flex;gap:2px;overflow-x:auto;padding-bottom:8px;margin:0 -4px;-webkit-overflow-scrolling:touch}\n.hr{flex:0 0 54px;text-align:center;padding:6px 2px;border-radius:12px}\n.hr.now{background:var(--a-card2)}\n.hr .t{font-size:12px;color:var(--a-mute);font-weight:600}\n.hr .i{font-size:24px;line-height:1.3}\n.hr .d{font-family:var(--a-disp);font-weight:700;font-size:16px}\n.hr .p{font-size:11px;font-weight:700;color:var(--a-rain);min-height:14px}\n.days{display:grid;gap:2px;margin-top:6px}\n.day{display:grid;grid-template-columns:62px 30px 1fr;align-items:center;gap:8px;padding:7px 4px;border-top:1px solid var(--a-line)}\n.day:first-child{border-top:none}\n.day .n{font-weight:700;font-size:15px}\n.day .i{font-size:24px;text-align:center}\n.day .m{min-width:0}\n.day .x{font-size:12px;color:var(--a-ink2);display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}\n.day .x .r{color:var(--a-rain);font-weight:700}\n.rng{display:grid;grid-template-columns:34px 1fr 34px;align-items:center;gap:8px;margin-top:3px;font-family:var(--a-disp);font-weight:700;font-size:14px}\n.rng span:first-child{text-align:right;color:var(--a-mute)}\n.rng .tr{position:relative;height:7px;border-radius:999px;background:var(--a-track)}\n.rng .bar{position:absolute;top:0;bottom:0;border-radius:999px;background:linear-gradient(90deg,var(--a-wind),var(--a-sun))}\n.sm{display:grid;grid-template-columns:auto 1fr;gap:4px 16px;align-items:center}\n.sm .big{font-size:44px;line-height:1;grid-row:span 3}\n.sm div{font-size:14px;color:var(--a-ink2)}\n.sm b{color:var(--a-ink);font-family:var(--a-disp)}\n.olnote{font-size:12px;color:var(--a-mute);margin-top:4px}\n";
-var st=document.createElement("style");st.textContent=CSS+".rctl{display:flex;align-items:center;gap:10px;margin-top:8px}\n.rctl button{flex:none;width:40px;height:36px;border-radius:10px;border:1px solid var(--a-line);background:var(--a-card2);color:var(--a-ink);font-size:16px;cursor:pointer}\n.rctl input{flex:1;min-width:0}\n.rctl span{flex:none;min-width:84px;text-align:right;font-weight:700;font-size:14px}\n.rmode{display:flex;gap:6px;margin:0 0 10px}\n.rmode button{padding:7px 13px;border-radius:999px;border:1px solid var(--a-line);background:var(--a-card2);color:var(--a-ink);font:600 13px var(--a-body);cursor:pointer}\n.rmode button.on{background:var(--a-wind);border-color:transparent;color:#fff}";document.head.appendChild(st);
+var st=document.createElement("style");st.textContent=CSS+".rctl{display:flex;align-items:center;gap:10px;margin-top:8px}\n.rctl button{flex:none;width:40px;height:36px;border-radius:10px;border:1px solid var(--a-line);background:var(--a-card2);color:var(--a-ink);font-size:16px;cursor:pointer}\n.rctl input{flex:1;min-width:0}\n.rctl span{flex:none;min-width:84px;text-align:right;font-weight:700;font-size:14px}\n.rmode{display:flex;gap:6px;margin:0 0 10px}\n.rmode button{padding:7px 13px;border-radius:999px;border:1px solid var(--a-line);background:var(--a-card2);color:var(--a-ink);font:600 13px var(--a-body);cursor:pointer}\n.rmode button.on{background:var(--a-wind);border-color:transparent;color:#fff}\n.rmode{flex-wrap:wrap}\n.rmode select{flex:1;min-width:180px;max-width:100%;padding:7px 10px;border-radius:10px;border:1px solid var(--a-line);background:var(--a-card2);color:var(--a-ink);font:600 13px var(--a-body)}";document.head.appendChild(st);
 var app=document.getElementById("app");
 if(!document.getElementById("warn")){var w=document.createElement("div");w.id="warn";(app&&app.parentNode?app.parentNode.insertBefore(w,app):document.body.appendChild(w));}
 if(!document.getElementById("outlook")){var o=document.createElement("div");o.id="outlook";(app&&app.parentNode?app.parentNode.insertBefore(o,app.nextSibling):document.body.appendChild(o));}
@@ -49,7 +49,7 @@ function renderOutlook(){
   var root=$("outlook");
   if(!$("ol-main")){
     root.innerHTML='<div class="ol"><div id="ol-main" class="full" style="display:contents"></div>'+
-      '<section class="card full"><h2>Radar und Wolken</h2><div class="rmode" role="group" aria-label="Kartenansicht"><button type="button" data-m="radar" class="on">Regenradar</button><button type="button" data-m="sat">Wolken (Satellit)</button></div><div id="ol-radar" aria-label="Wetterkarte"></div><div class="rctl" id="rctl" hidden><button id="rplay" type="button" aria-label="Animation starten oder anhalten">⏸</button><input id="rslide" type="range" min="0" max="0" value="0" aria-label="Zeitpunkt wählen"><span id="rtime" class="tn"></span></div><div class="olnote" id="rinfo">Niederschlagsradar des Deutschen Wetterdienstes, letzte Stunde · Karte: OpenStreetMap</div></section><div id="ol-sun" style="display:contents"></div></div>';
+      '<section class="card full"><h2>Radar und Wolken</h2><div class="rmode" role="group" aria-label="Kartenansicht"><button type="button" data-m="radar" class="on">Regenradar</button><button type="button" data-m="sat">Wolken (Satellit)</button><select id="rsat" hidden aria-label="Satellitenbild wählen"></select></div><div id="ol-radar" aria-label="Wetterkarte"></div><div class="rctl" id="rctl" hidden><button id="rplay" type="button" aria-label="Animation starten oder anhalten">⏸</button><input id="rslide" type="range" min="0" max="0" value="0" aria-label="Zeitpunkt wählen"><span id="rtime" class="tn"></span></div><div class="olnote" id="rinfo">Niederschlagsradar des Deutschen Wetterdienstes, letzte Stunde · Karte: OpenStreetMap</div></section><div id="ol-sun" style="display:contents"></div></div>';
     initRadar();
   }
   $("ol-main").innerHTML=(fcHtml?fcHtml.replace("%CHIP%",chip):"");
@@ -82,28 +82,36 @@ function fetchRadarTimes(){
     return [];
   });
 }
-// Satellitenebene automatisch im DWD-Angebot suchen (Namen werden nicht fest vorgegeben)
-function pickSat(doc){
-  var tiers=[/rgb.*day.*hrv.*night.*ir108/, /natural/, /ir_?108|ir_?105|infrared/, /./], bad=/(cloud_?type|cloud_?mask|ctth?|cma|fire|dust|ash|volcan|snow|sst|sea|legend|mask)/;
-  var all=doc.getElementsByTagName("Layer"), best=null;
+// Satellitenebenen automatisch im DWD-Angebot suchen (Namen werden nicht fest vorgegeben)
+var satList=null, satAt=0;
+function satScore(low){ return (/hrv/.test(low)?4:0)+(/1km/.test(low)?3:0)+(/rgb/.test(low)?1:0)+(/natural/.test(low)?1:0)+(/_3h$/.test(low)?0.5:0); }
+function listSat(doc){
+  var bad=/(cloud_?type|cloud_?mask|ctth?|cma|fire|dust|ash|volcan|snow|sst|sea|legend|mask)/, out=[], all=doc.getElementsByTagName("Layer");
   for(var i=0;i<all.length;i++){
     var nm=kid(all[i],"Name"), dim=timeDim(all[i]); if(!nm||!dim) continue;
-    var name=nm.textContent.trim(), low=name.toLowerCase(); if(low.indexOf("satellite")<0) continue;
-    for(var t=0;t<tiers.length;t++){
-      if(!tiers[t].test(low)) continue; if(t===3&&bad.test(low)) break;
-      var tt=kid(all[i],"Title"), cand={tier:t,name:name,title:tt?tt.textContent.trim():name,dim:dim.textContent};
-      if(!best||t<best.tier||(t===best.tier&&/_3h$/.test(low)&&!/_3h$/.test(best.name.toLowerCase()))) best=cand;
-      break;
-    }
+    var name=nm.textContent.trim(), low=name.toLowerCase(); if(low.indexOf("satellite")<0||bad.test(low)) continue;
+    var tt=kid(all[i],"Title");
+    out.push({name:name,title:tt?tt.textContent.trim():name,dim:dim.textContent,score:satScore(low)});
   }
-  return best;
+  out.sort(function(a,b){ return b.score-a.score||a.title.localeCompare(b.title); });
+  return out;
+}
+function fillSel(){
+  var sel=$("rsat"); if(!sel||!satList) return;
+  sel.innerHTML=satList.map(function(x){ return '<option value="'+esc(x.name)+'"'+(satPick&&x.name===satPick.name?' selected':'')+'>'+esc(x.title)+' ('+esc(x.name.replace(/^dwd:Satellite_?/i,""))+')</option>'; }).join("");
+  sel.hidden=(rMode!=="sat")||satList.length<2;
+}
+function useSat(){
+  var want=null; try{ want=localStorage.getItem("sat_layer"); }catch(e){}
+  var p=satList.filter(function(x){ return x.name===want; })[0]||satList[0];
+  satPick=p; rLayerName=p.name; fillSel();
+  return parseTimes(p.dim,12);
 }
 function fetchSatTimes(){
-  var done=function(p){ satPick=p; rLayerName=p.name; return parseTimes(p.dim,12); };
-  if(satPick&&Date.now()-satPick.at<10*60*1000) return Promise.resolve(parseTimes(satPick.dim,12));
+  if(satList&&Date.now()-satAt<10*60*1000) return Promise.resolve(useSat());
   return getXml(CAPS_ALL).then(function(doc){
-    var p=pickSat(doc); if(!p) throw new Error("keine Satellitenebene");
-    p.at=Date.now(); return done(p);
+    satList=listSat(doc); if(!satList.length) throw new Error("keine Satellitenebene");
+    satAt=Date.now(); return useSat();
   });
 }
 function rShow(i){
@@ -123,7 +131,7 @@ function rPlay(){
   })();
 }
 function wmsOpts(extra){
-  var o={layers:rLayerName,format:"image/png",transparent:true,version:"1.3.0",opacity:rOpacity,attribution:rMode==="sat"?"Satellit: DWD/EUMETSAT":"Radar: DWD"};
+  var o={layers:rLayerName,format:"image/png",transparent:true,version:"1.3.0",opacity:rOpacity,interpolations:rMode==="sat"?"bilinear":"nearest neighbor",attribution:rMode==="sat"?"Satellit: DWD/EUMETSAT":"Radar: DWD"};
   for(var k in extra) o[k]=extra[k]; return o;
 }
 function clearLayers(){
@@ -164,6 +172,7 @@ function setMode(m){
   rOpacity= m==="sat" ? 0.9 : 0.75;
   var bs=document.querySelectorAll(".rmode button"); for(var i=0;i<bs.length;i++) bs[i].className= bs[i].getAttribute("data-m")===m?"on":"";
   var e=$("rinfo"); if(e) e.textContent="Lädt …";
+  var sel=$("rsat"); if(sel) sel.hidden=true;
   radarMap._userStopped=false;
   refreshRadar();
 }
@@ -176,6 +185,7 @@ function initRadar(){
     $("rplay").addEventListener("click",function(){ if(rPlaying){ radarMap._userStopped=true; rStop(); } else { radarMap._userStopped=false; rPlay(); } });
     $("rslide").addEventListener("input",function(){ radarMap._userStopped=true; rStop(); rShow(+this.value); });
     var bs=document.querySelectorAll(".rmode button"); for(var i=0;i<bs.length;i++) bs[i].addEventListener("click",function(){ setMode(this.getAttribute("data-m")); });
+    $("rsat").addEventListener("change",function(){ try{ localStorage.setItem("sat_layer",this.value); }catch(e){} radarMap._userStopped=false; refreshRadar(); });
     refreshRadar();
     setInterval(function(){ if(!document.hidden) refreshRadar(); },5*60*1000);
   }
