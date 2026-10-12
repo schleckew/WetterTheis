@@ -102,7 +102,7 @@ function loadForecast(){
    "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,wind_gusts_10m_max,sunrise,sunset,daylight_duration"+
    "&timezone="+encodeURIComponent(TZ)+"&forecast_days=7&wind_speed_unit=kmh";
   fetch(u).then(function(x){if(!x.ok)throw new Error(x.status);return x.json()}).then(buildForecast)
-   .catch(function(){ if(!fcHtml){ fcHtml='<section class="card full"><h2>Vorhersage</h2><div class="olnote">Die Vorhersage ist gerade nicht erreichbar. Neuer Versuch in wenigen Minuten.</div></section>'; renderOutlook(); } setTimeout(loadForecast,5*60*1000); });
+   .catch(function(e){ if(!fcHtml){ fcHtml='<section class="card full"><h2>Vorhersage</h2><div class="olnote">Die Vorhersage ist gerade nicht verfügbar ('+esc(e&&e.message?e.message:e)+'). Neuer Versuch in wenigen Minuten.</div></section>'; renderOutlook(); } setTimeout(loadForecast,5*60*1000); });
 }
 
 /* ---------- Warnungen (DWD über Brightsky) ---------- */
@@ -122,7 +122,8 @@ function loadWarn(){
    }).catch(function(){ warnOk=null; renderOutlook(); });
 }
 
-renderOutlook(); loadForecast(); loadWarn();
+try{ renderOutlook(); loadForecast(); loadWarn(); }
+catch(e){ var box=$("outlook"); if(box) box.innerHTML='<div class="olnote" style="padding:12px">Vorhersage-Modul: Fehler beim Start ('+esc(e&&e.message?e.message:e)+')</div>'; }
 setInterval(loadForecast,30*60*1000); setInterval(loadWarn,10*60*1000);
 document.addEventListener("visibilitychange",function(){ if(!document.hidden){ loadWarn(); } });
 })();
