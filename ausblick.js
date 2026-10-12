@@ -33,7 +33,10 @@ function moon(){
 function sunCard(d){
   var m=moon(), s="";
   if(d&&d.sunrise){
-    var secs=d.daylight_duration, h=Math.floor(secs/3600), mi=Math.round((secs%3600)/60);
+    var secs=+(d.daylight_duration&&d.daylight_duration[0]);
+if(!isFinite(secs)||secs<=0) secs=(new Date(d.sunset[0])-new Date(d.sunrise[0]))/1000;
+var tot=Math.round(secs/60), h=Math.floor(tot/60), mi=tot%60;
+
     s+='<section class="card"><h2>Sonne</h2><div class="sm"><div class="big">🌅</div>'+
       '<div>Aufgang <b>'+hm(d.sunrise[0])+' Uhr</b></div><div>Untergang <b>'+hm(d.sunset[0])+' Uhr</b></div>'+
       '<div>Tageslänge <b>'+h+' h '+mi+' min</b></div></div></section>';
