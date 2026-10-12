@@ -92,20 +92,6 @@ footer a{color:#a9c9e6}
     </div>
   </details>
 
-  <details id="auto">
-    <summary>Automatische Aktualisierung (GitHub-Zugang)</summary>
-    <ol style="padding-left:20px;line-height:1.5">
-      <li>Auf github.com: Profilbild → <b>Settings</b> → <b>Developer settings</b> → <b>Personal access tokens</b> → <b>Fine-grained tokens</b> → <b>Generate new token</b>.</li>
-      <li>Bei „Repository access“ nur <b>dieses Repository</b> wählen. Unter „Permissions → Repository permissions“ bei <b>Actions</b> auf <b>Read and write</b> stellen. Ablauf: so lang wie möglich.</li>
-      <li>Token kopieren und hier einfügen. Er wird nur in diesem Browser gespeichert, auf Handy und PC also jeweils einmal eingeben.</li>
-    </ol>
-    <div class="btns" style="align-items:center">
-      <input id="tkIn" type="password" autocomplete="off" placeholder="GitHub-Token einfügen" aria-label="GitHub-Token" style="flex:1;min-width:200px;padding:9px 11px;border-radius:8px;border:1px solid var(--line);background:var(--panel2);color:var(--ink)">
-      <button id="tkSave" type="button">Speichern</button>
-      <button id="tkDel" type="button" class="alt">Entfernen</button>
-    </div>
-  </details>
-
   <footer>
     <span>Daten: <a href="https://www.awekas.at/" target="_blank" rel="noopener">AWEKAS</a> · <a href="https://www.awekas.at/de/instrument.php4?id=24938&amp;reload=2#day" target="_blank" rel="noopener">Verlauf und Monatswerte</a> · <a href="index.html">Ausführliche Ansicht</a></span>
     <span id="fetchInfo"></span>
@@ -116,7 +102,7 @@ footer a{color:#a9c9e6}
 <script>
 (function(){
 "use strict";
-var API="https://api.awekas.at/current.php?key=", REFRESH_MS=5*60*1000, STALE_S=30*60;
+var API="https://api.awekas.at/current.php?key=", WORKER_URL="https://wetter.eweiter.workers.dev", REFRESH_MS=60*1000, STALE_S=30*60;
 var DEMO={fetchdate:0,error:null,current:{datatimestamp:0,timeoffset:7200,temperature:9.1,dewpoint:5.4,humidity:77,airpress_rel:1020.7,tendency:-1,
   precipitation:0,rainrate:0,windspeed:0,gustspeed:0,winddirection:16,uv:0.7,solar:103,indoortemperature:20.4,indoorhumidity:48},"1h":{precipitation_1h:0},
   day:{temp_min:6.2,temp_max:13.8,dewpoint_min:4,dewpoint_max:7,hum_min:47,hum_max:87,airp_rel_min:1019.4,airp_rel_max:1020.7,windspeed_max:7.1,gustspeed_max:7.9,solar_max:103,uv_max:.8,intemp_min:19.9,intemp_max:20.4,precipitation_24h:0}};
@@ -334,7 +320,7 @@ function direct(){
 function load(){
   if(hold) return;
   if(/^https?:/.test(location.protocol)){
-    getJson("data.json?t="+Date.now()).catch(function(){return getJson("awekas.php")}).then(function(j){got(j);try{auto(j)}catch(e){}}).catch(direct);
+    getJson(WORKER_URL).catch(function(){return getJson("data.json?t="+Date.now())}).then(function(j){got(j);try{auto(j)}catch(e){}}).catch(direct);
   } else direct();
 }
 $("jsonShow").addEventListener("click",function(){
@@ -347,44 +333,11 @@ $("jsonPaste").addEventListener("click",function(){
 });
 document.addEventListener("visibilitychange",function(){if(!document.hidden)load()});
 
-/* ---------- Aktualisierung über GitHub Actions ---------- */
-var GH_REPO=(function(){var h=location.hostname,p=location.pathname.split("/")[1];return /\.github\.io$/.test(h)&&p?h.split(".")[0]+"/"+p:"schleckew/WetterTheis"})();
-var lastFetch=0, pollTimer=null;
-function ghToken(){try{return localStorage.getItem("gh_token")||""}catch(e){return""}}
+/* ---------- Aktualisierung ---------- */
 function note(t){var b=$("banner");b.textContent=t;b.classList.add("show")}
-function got(j){handle(j);if(j&&!j.error&&j.fetchdate)lastFetch=j.fetchdate}
-function poll(n){
-  clearTimeout(pollTimer);
-  if(n>8){note("Die neuen Daten sind noch nicht angekommen. Bitte in einer Minute neu laden.");return}
-  pollTimer=setTimeout(function(){
-    getJson("data.json?t="+Date.now()).then(function(j){
-      if(j.fetchdate&&j.fetchdate>lastFetch) got(j); else poll(n+1);
-    }).catch(function(){poll(n+1)});
-  },n===0?25000:12000);
-}
-function trigger(force){
-  var tk=ghToken();
-  if(!tk){$("auto").open=true;$("auto").scrollIntoView&&$("auto").scrollIntoView({block:"center"});return}
-  var last=Number(localStorage.getItem("gh_last")||0);
-  if(!force&&Date.now()-last<5*60*1000) return;
-  try{localStorage.setItem("gh_last",String(Date.now()))}catch(e){}
-  $("statusTxt").textContent="Aktualisierung läuft …";
-  fetch("https://api.github.com/repos/"+GH_REPO+"/actions/workflows/wetter.yml/dispatches",{
-    method:"POST",
-    headers:{"Authorization":"Bearer "+tk,"Accept":"application/vnd.github+json","X-GitHub-Api-Version":"2022-11-28"},
-    body:JSON.stringify({ref:"main"})
-  }).then(function(r){ if(r.status!==204) throw new Error("HTTP "+r.status); poll(0); })
-    .catch(function(e){ note("Die Aktualisierung konnte nicht gestartet werden ("+e.message+"). Bitte den GitHub-Token prüfen."); });
-}
-// Beim Öffnen automatisch anstoßen, wenn die Daten älter als 10 Minuten sind
-function auto(j){ if(ghToken()&&j&&j.fetchdate&&Date.now()/1000-j.fetchdate>10*60) trigger(false); }
-$("refreshNow").addEventListener("click",function(){trigger(true)});
-$("tkSave").addEventListener("click",function(){
-  var v=$("tkIn").value.trim(); if(!v) return;
-  try{localStorage.setItem("gh_token",v)}catch(e){}
-  $("tkIn").value=""; $("auto").open=false; trigger(true);
-});
-$("tkDel").addEventListener("click",function(){try{localStorage.removeItem("gh_token")}catch(e){} $("tkIn").value=""; note("Der GitHub-Token wurde aus diesem Browser entfernt.");});
+function got(j){handle(j)}
+function auto(j){}
+$("refreshNow").addEventListener("click",function(){$("statusTxt").textContent="Aktualisierung läuft …";load()});
 
 var hs=location.hash.length>1?location.hash.slice(1):"";
 if(hs){try{showText(decodeURIComponent(hs))}catch(e){fallback("Die Daten in der Adresse konnten nicht gelesen werden.")}}
