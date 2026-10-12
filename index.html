@@ -221,6 +221,12 @@ var STOPS = [[-10,[44,79,124]],[0,[53,106,143]],[10,[60,122,104]],[20,[138,122,4
 function $(id){return document.getElementById(id)}
 function ok(v){return v!==null && v!==undefined && !isNaN(v)}
 function f(v,d){return ok(v)?Number(v).toFixed(d===undefined?1:d).replace(".",","):"–"}
+function wetbulb(c){
+  if(ok(c.wetbulbtemperature)) return Number(c.wetbulbtemperature);
+  if(!ok(c.temperature)||!ok(c.humidity)) return null;
+  var t=c.temperature, rh=c.humidity;   // Näherung nach Stull (2011), falls AWEKAS keinen Wert liefert
+  return t*Math.atan(0.151977*Math.sqrt(rh+8.313659))+Math.atan(t+rh)-Math.atan(rh-1.676331)+0.00391838*Math.pow(rh,1.5)*Math.atan(0.023101*rh)-4.686035;
+}
 function clamp(v,a,b){return Math.max(a,Math.min(b,v))}
 function dirName(deg){return DIRS[Math.round(((deg%360)+360)%360/22.5)%16]}
 function pad(n){return String(n).padStart(2,"0")}
@@ -292,6 +298,7 @@ function render(json, live, note){
 
   var t=c.temperature, wc=ok(c.windchill)?c.windchill:windchill(t,c.windspeed||0);
   var feel = Math.abs(wc-t)>=.3 ? 'Gefühlt '+f(wc,1)+' °C' : 'Gefühlt wie gemessen';
+  var wb=wetbulb(c), cool=ok(wb)&&ok(t)?Math.max(0,t-wb):null;
   var cond = COND[c.condition] || "";
   var pos = (ok(d.temp_min)&&ok(d.temp_max)&&d.temp_max>d.temp_min) ? clamp((t-d.temp_min)/(d.temp_max-d.temp_min),0,1)*100 : 50;
   document.documentElement.style.setProperty("--hero",heroColor(t));
@@ -303,7 +310,7 @@ function render(json, live, note){
     '<div>'+(cond?'<div class="cond">'+cond+'</div>':'')+
     '<div class="temp tn">'+f(t,1)+'<small>°C</small></div>'+
     '<div class="feel">'+feel+'</div></div>'+
-    '<div class="side tn">Taupunkt<br><b>'+f(c.dewpoint,1)+' °C</b><br>Luftfeuchte<br><b>'+f(c.humidity,0)+' %</b></div>'+
+    '<div class="side tn">Taupunkt<br><b>'+f(c.dewpoint,1)+' °C</b><br>Feuchtkugel<br><b>'+f(wb,1)+' °C</b><br>Luftfeuchte<br><b>'+f(c.humidity,0)+' %</b></div>'+
     (ok(d.temp_min)&&ok(d.temp_max)?
       '<div class="range"><div class="rb"><i style="left:'+pos+'%"></i></div>'+
       '<div class="rl tn"><span>Tief '+f(d.temp_min,1)+' °C · '+hhmm(d.temp_min_ts,off)+'</span><span>Hoch '+f(d.temp_max,1)+' °C · '+hhmm(d.temp_max_ts,off)+'</span></div></div>':'')+
@@ -359,11 +366,14 @@ function render(json, live, note){
     '</section>';
 
   // Feuchte
-  html+='<section class="card span4"><h2>Luftfeuchte und Taupunkt</h2>'+
+  html+='<section class="card span4"><h2>Luftfeuchte, Taupunkt und Feuchtkugel</h2>'+
     '<div class="big tn">'+f(c.humidity,0)+'<small>%</small></div>'+
     '<div class="bar"><i style="width:'+clamp(c.humidity||0,0,100)+'%;background:var(--c-hum)"></i></div>'+
     kv("Taupunkt",f(c.dewpoint,1)+" °C")+
+    kv("Feuchtkugel",f(wb,1)+" °C")+
+    (ok(cool)?kv("Abkühlbar um bis zu",f(cool,1)+" K"):"")+
     kv("Heute",f(d.hum_min,0)+" – "+f(d.hum_max,0)+" %")+
+    '<div class="hint" style="margin-top:8px">Feuchtkugeltemperatur: so tief kann Wasserverdunstung die Luft höchstens abkühlen.</div>'+
     '</section>';
 
   // Zusatzsensoren (nur wenn Werte vorhanden)
