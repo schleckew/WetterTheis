@@ -1,8 +1,9 @@
 name: Wetterdaten aktualisieren
 
+# Dieser Workflow veröffentlicht nur noch die Seite (HTML und JS) auf GitHub Pages.
+# Die Wetterdaten kommen live über den Cloudflare Worker, deshalb gibt es keinen
+# zeitgesteuerten Abruf und kein Secret mehr.
 on:
-  schedule:
-    - cron: '1-59/5 * * * *'     # alle 5 Minuten, versetzt (GitHub kann das verzoegern oder auslassen)
   workflow_dispatch:           # manuell startbar im Reiter "Actions"
   push:
     branches: [main]
@@ -25,24 +26,11 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Daten bei AWEKAS abholen
-        env:
-          AWEKAS_KEY: ${{ secrets.AWEKAS_KEY }}
-        run: |
-          set -euo pipefail
-          mkdir -p _site
-          # Key ist meist schon URL-kodiert (%2B ...), sonst kodieren
-          if printf '%s' "$AWEKAS_KEY" | grep -Eq '%[0-9A-Fa-f]{2}'; then
-            KEY="$AWEKAS_KEY"
-          else
-            KEY="$(printf '%s' "$AWEKAS_KEY" | jq -sRr @uri)"
-          fi
-          curl -fsS --max-time 20 "https://api.awekas.at/current.php?key=${KEY}" -o _site/data.json
-          # Bei AWEKAS-Fehler (z. B. invalid key) abbrechen, damit die letzte gute Version online bleibt
-          jq -e '.error == null and .current != null' _site/data.json > /dev/null
-
       - name: Seite bereitstellen
-        run: cp ./*.html _site/
+        run: |
+          mkdir -p _site
+          cp ./*.html _site/
+          cp ./*.js _site/
 
       - uses: actions/configure-pages@v6
       - uses: actions/upload-pages-artifact@v5
