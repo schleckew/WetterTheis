@@ -34,9 +34,8 @@ function sunCard(d){
   var m=moon(), s="";
   if(d&&d.sunrise){
     var secs=+(d.daylight_duration&&d.daylight_duration[0]);
-if(!isFinite(secs)||secs<=0) secs=(new Date(d.sunset[0])-new Date(d.sunrise[0]))/1000;
-var tot=Math.round(secs/60), h=Math.floor(tot/60), mi=tot%60;
-
+    if(!isFinite(secs)||secs<=0) secs=(new Date(d.sunset[0])-new Date(d.sunrise[0]))/1000;
+    var tot=Math.round(secs/60), h=Math.floor(tot/60), mi=tot%60;
     s+='<section class="card"><h2>Sonne</h2><div class="sm"><div class="big">🌅</div>'+
       '<div>Aufgang <b>'+hm(d.sunrise[0])+' Uhr</b></div><div>Untergang <b>'+hm(d.sunset[0])+' Uhr</b></div>'+
       '<div>Tageslänge <b>'+h+' h '+mi+' min</b></div></div></section>';
@@ -72,7 +71,8 @@ function parseTimes(txt,n){
     var p=last.split("/"), end=new Date(p[1]).getTime(), m=/PT(?:(\d+)H)?(?:(\d+)M)?/.exec(p[2]||"PT5M")||[], step=(((+m[1]||0)*60)+(+m[2]||0))*60000||300000;
     for(var i=n-1;i>=0;i--) out.push(new Date(end-i*step));
   } else { toks.slice(-n).forEach(function(t){ out.push(new Date(t)); }); }
-  return out.filter(function(d){return !isNaN(d.getTime())});
+  var oldest=Date.now()-24*3600*1000;
+  return out.filter(function(d){return !isNaN(d.getTime())&&d.getTime()>=oldest});   // höchstens die letzten 24 Stunden
 }
 function kid(el,tag){ for(var c=el.firstElementChild;c;c=c.nextElementSibling){ if(c.localName===tag) return c; } return null; }
 function timeDim(layer){ for(var c=layer.firstElementChild;c;c=c.nextElementSibling){ if(c.localName==="Dimension"&&(c.getAttribute("name")||"").toLowerCase()==="time") return c; } return null; }
@@ -104,17 +104,40 @@ function fillSel(){
   sel.innerHTML=satList.map(function(x){ return '<option value="'+esc(x.name)+'"'+(satPick&&x.name===satPick.name?' selected':'')+'>'+esc(x.title)+' ('+esc(x.name.replace(/^dwd:Satellite_?/i,""))+')</option>'; }).join("");
   sel.hidden=(rMode!=="sat")||satList.length<2;
 }
-function useSat(){
-  var want=null; try{ want=localStorage.getItem("sat_layer"); }catch(e){}
-  var p=satList.filter(function(x){ return x.name===want; })[0]||satList[0];
-  satPick=p; rLayerName=p.name; fillSel();
-  return parseTimes(p.dim,12);
+function layerCapsUrl(name){ return "https://maps.dwd.de/geoserver/dwd/"+name.replace(/^dwd:/,"")+"/wms?service=WMS&version=1.3.0&request=GetCapabilities"; }
+// Die große Gesamtliste wird nur selten geladen und einen Tag lang im Browser gemerkt.
+function loadSatList(){
+  try{
+    var c=JSON.parse(localStorage.getItem("sat_list")||"null");
+    if(c&&c.list&&c.list.length&&Date.now()-c.at<24*3600*1000) return Promise.resolve(c.list);
+  }catch(e){}
+  return getXml(CAPS_ALL).then(function(doc){
+    var l=listSat(doc); if(!l.length) throw new Error("keine Satellitenebene");
+    var now=Date.now(); l.forEach(function(x){ x.at=now; });
+    try{ localStorage.setItem("sat_list",JSON.stringify({at:now,list:l.map(function(x){ return {name:x.name,title:x.title,score:x.score}; })})); }catch(e){}
+    return l;
+  });
+}
+function satTimesFor(p){
+  if(p.dim&&Date.now()-(p.at||0)<4*60*1000) return Promise.resolve(parseTimes(p.dim,12));
+  return getXml(layerCapsUrl(p.name)).then(function(doc){
+    var dims=doc.getElementsByTagName("Dimension");
+    for(var i=0;i<dims.length;i++){ if((dims[i].getAttribute("name")||"").toLowerCase()==="time") return parseTimes(dims[i].textContent,12); }
+    throw new Error("keine Zeitangabe");
+  }).catch(function(){   // Notlösung: Gesamtliste
+    return getXml(CAPS_ALL).then(function(doc){
+      var q=listSat(doc).filter(function(x){ return x.name===p.name; })[0]; if(!q) throw new Error("Ebene nicht gefunden");
+      return parseTimes(q.dim,12);
+    });
+  });
 }
 function fetchSatTimes(){
-  if(satList&&Date.now()-satAt<10*60*1000) return Promise.resolve(useSat());
-  return getXml(CAPS_ALL).then(function(doc){
-    satList=listSat(doc); if(!satList.length) throw new Error("keine Satellitenebene");
-    satAt=Date.now(); return useSat();
+  return loadSatList().then(function(list){
+    satList=list;
+    var want=null; try{ want=localStorage.getItem("sat_layer"); }catch(e){}
+    var p=list.filter(function(x){ return x.name===want; })[0]||list[0];
+    satPick=p; rLayerName=p.name; fillSel();
+    return satTimesFor(p);
   });
 }
 function rShow(i){
