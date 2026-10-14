@@ -117,15 +117,6 @@ body{margin:0;min-height:100%;background:var(--bg);color:var(--ink);font-family:
 .scroll{overflow-x:auto}
 
 /* Konfiguration */
-details.cfg{margin-top:20px}
-details.cfg summary{cursor:pointer;color:var(--mute);font-size:13px}
-.cfgbox{margin-top:8px;display:flex;gap:8px;flex-wrap:wrap}
-.cfgbox input{flex:1;min-width:200px;padding:9px 11px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink);font-size:14px}
-.cfgbox button{padding:9px 16px;border:0;border-radius:8px;background:var(--c-wind);color:#fff;font-weight:700;font-size:14px;cursor:pointer}
-.cfgbox button:focus-visible,.cfgbox input:focus-visible,summary:focus-visible{outline:3px solid var(--c-sun);outline-offset:2px}
-textarea#jsonIn{width:100%;margin-top:8px;padding:9px 11px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink);font:13px/1.35 ui-monospace,Consolas,monospace}
-.cfgbox input[readonly]{font:12px ui-monospace,Consolas,monospace}
-.cfgbox button.alt{background:var(--surface2);color:var(--ink);border:1px solid var(--line)}
 .steps{margin:8px 0 0;padding-left:20px;color:var(--ink2);font-size:14px}
 footer{margin-top:22px;font-size:12.5px;color:var(--mute);display:flex;flex-wrap:wrap;justify-content:space-between;gap:6px}
 footer a{color:inherit}
@@ -150,34 +141,6 @@ footer a{color:inherit}
 
   <div id="app"></div>
 
-  <details class="cfg" id="cfg">
-    <summary>API-Key ändern</summary>
-    <div class="cfgbox">
-      <input id="keyIn" type="text" autocomplete="off" placeholder="AWEKAS API-Key">
-      <button id="keySave" type="button">Speichern und laden</button>
-    </div>
-    <div class="hint" style="margin-top:6px">Alternativ den Key an die Adresse anhängen: <span class="tn">…/wincheringen-wetter.html?key=DEIN_KEY</span></div>
-  </details>
-
-  <details class="cfg" id="man">
-    <summary>JSON manuell laden (ohne Server, ohne CORS)</summary>
-    <ol class="steps">
-      <li>Die AWEKAS-Adresse (<span class="tn">api.awekas.at/current.php?key=…</span>) im Browser öffnen, das JSON erscheint als Text.</li>
-      <li>Das Lesezeichen „Wetter anzeigen“ antippen. Es öffnet dieses Dashboard mit den Daten.</li>
-      <li>Alternativ: Text kopieren, hier einfügen und „Anzeigen“ drücken.</li>
-    </ol>
-    <textarea id="jsonIn" rows="4" placeholder='JSON hier einfügen, z. B. {"fetchdate": 1596280165, "error": null, "current": {…}}'></textarea>
-    <div class="cfgbox">
-      <button id="jsonShow" type="button">Anzeigen</button>
-      <button id="jsonPaste" type="button" class="alt">Aus Zwischenablage</button>
-    </div>
-    <div class="hint" style="margin-top:12px">Code für das Lesezeichen (als Adresse eines neuen Lesezeichens eintragen):</div>
-    <div class="cfgbox">
-      <input id="bmCode" type="text" readonly aria-label="Lesezeichen-Code">
-      <button id="bmCopy" type="button" class="alt">Kopieren</button>
-    </div>
-  </details>
-
   <footer>
     <span>Daten: <a href="https://www.awekas.at/" target="_blank" rel="noopener">AWEKAS</a> · Vorhersage: <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a> · Warnungen: DWD über <a href="https://brightsky.dev/" target="_blank" rel="noopener">Brightsky</a> · <a href="instrumente.html">Messinstrumente</a> · aktualisiert sich jede Minute</span>
     <span id="fetchInfo"></span>
@@ -189,7 +152,6 @@ footer a{color:inherit}
 (function(){
 "use strict";
 
-var API = "https://api.awekas.at/current.php?key=";
 var WORKER_URL = "https://wetter.eweiter.workers.dev";   // Cloudflare Worker: holt die Daten live von AWEKAS
 var REFRESH_MS = 60*1000;         // der Worker puffert 60 s, AWEKAS wird also höchstens 1x pro Minute gefragt
 var STALE_S = 30*60;              // Daten älter als 30 min gelten als veraltet
@@ -420,15 +382,7 @@ function render(json, live, note){
 }
 
 /* ---------- Laden ---------- */
-function getKey(){
-  try{
-    var q=new URLSearchParams(location.search).get("key");
-    if(q) return q.replace(/ /g,"+");     // "+" im Key wird in URLs sonst zu Leerzeichen
-    return localStorage.getItem("awekas_key")||"";
-  }catch(e){return ""}
-}
-var key=getKey(), timer=null, manual=false, hold=false;
-var TIP=" Tipp: Unter „JSON manuell laden“ gibt es einen Weg ohne Server.";
+var timer=null, manual=false, hold=false;
 
 // Zeigt zuletzt gespeicherte Daten, sonst Beispieldaten
 function fallback(note){
@@ -439,74 +393,27 @@ function fallback(note){
 }
 function handle(j){
   if(j.error){
-    var m={"invalid key":"Der API-Key ist ungültig.","maximum quota exceeded":"Das Abruflimit ist erreicht, bitte später erneut versuchen.","AWEKAS plus not active":"AWEKASplus ist im Benutzerprofil nicht aktiv."};
+    var m={"invalid key":"Der API-Key im Cloudflare Worker ist ungültig.","maximum quota exceeded":"Das Abruflimit ist erreicht, bitte später erneut versuchen.","AWEKAS plus not active":"AWEKASplus ist im Benutzerprofil nicht aktiv."};
     fallback(m[j.error]||("AWEKAS meldet: "+j.error));
     return;
   }
   try{ localStorage.setItem("awekas_last",JSON.stringify(j)); }catch(e){}
   render(j,true,null);
 }
-// Firefox kopiert aus der JSON-Ansicht eine Baumdarstellung ("name  wert", Abschnitte allein auf einer Zeile)
-function parseTree(text){
-  var o={}, cur=o;
-  text.split(/\r?\n/).forEach(function(line){
-    var t=line.trim(); if(!t) return;
-    var m=t.match(/^(\S+)\s+(.*)$/);
-    if(!m){ cur=o[t]={}; return; }
-    var v=m[2].trim();
-    if(v==="null") v=null; else if(v==="true") v=true; else if(v==="false") v=false;
-    else if(/^-?\d+(\.\d+)?$/.test(v)) v=Number(v);
-    else v=v.replace(/^"|"$/g,"");
-    cur[m[1]]=v;
-  });
-  return o;
-}
-// JSON-Text (auch mit Drumherum oder als Firefox-Baumansicht) anzeigen
-function showText(text){
-  var j=null, a=text.indexOf("{"), z=text.lastIndexOf("}");
-  if(a>=0 && z>a){ try{ j=JSON.parse(text.slice(a,z+1)); }catch(e){} }
-  if(!j) j=parseTree(text);
-  if(!j || !j.current) throw new Error("kein JSON");
-  hold=true; manual=true; handle(j);
-}
 function load(){
   if(hold) return;
-  // Reihenfolge: data.json (GitHub Pages) -> awekas.php (PHP/Python-Proxy) -> direkter Abruf bei AWEKAS
-  if(/^https?:/.test(location.protocol)){
-    getJson(WORKER_URL)
-      .catch(function(){ return getJson("data.json?t="+Date.now()); })
-      .then(function(j){ got(j); try{auto(j)}catch(e){} })
-      .catch(direct);
-  } else direct();
+  getJson(WORKER_URL)
+    .catch(function(){ return getJson("data.json?t="+Date.now()); })
+    .then(function(j){ got(j); try{auto(j)}catch(e){} })
+    .catch(function(){ fallback("Abruf nicht möglich. Der nächste Versuch folgt automatisch."); });
 }
 function getJson(u){
   return fetch(u,{cache:"no-store"}).then(function(r){ if(!r.ok) throw new Error("HTTP "+r.status); return r.json(); });
 }
-// 3. Weg: direkter Abruf bei AWEKAS (klappt nur, wenn AWEKAS CORS erlaubt)
-function direct(){
-  if(!key){
-    fallback("Kein Live-Abruf möglich: kein API-Key in der Adresse."+TIP);
-    $("man").open=true; return;
-  }
-  fetch(API+encodeURIComponent(key),{cache:"no-store"})
-    .then(function(r){ if(!r.ok) throw new Error("HTTP "+r.status); return r.json(); })
-    .then(handle)
-    .catch(function(){
-      fallback("Direkter Abruf nicht möglich (AWEKAS erlaubt Abrufe von fremden Seiten vermutlich nicht, oder die Seite läuft lokal per file://)."+TIP);
-      $("man").open=true;
-    });
-}
 function start(){
   if(timer) clearInterval(timer);
-  // Daten aus der Adresse (Lesezeichen) oder eingebettet (wetter.bat)
-  var hs=location.hash.length>1 ? location.hash.slice(1) : "";
-  if(hs){
-    try{ showText(decodeURIComponent(hs)); return; }
-    catch(e){ fallback("Die Daten in der Adresse konnten nicht gelesen werden."); return; }
-  }
   if(window.AWEKAS_DATA){
     handle(window.AWEKAS_DATA);
-    $("cfg").style.display="none";
     setTimeout(function(){ location.reload(); },REFRESH_MS+15000);
     return;
   }
@@ -520,29 +427,7 @@ function got(j){handle(j)}
 function auto(j){}
 $("refreshNow").addEventListener("click",function(){$("statusTxt").textContent="Aktualisierung läuft …";load()});
 
-$("keyIn").value=key;
-$("keySave").addEventListener("click",function(){
-  key=$("keyIn").value.trim();
-  try{localStorage.setItem("awekas_key",key)}catch(e){}
-  hold=false; start();
-});
 
-// Manuelles Laden
-$("jsonShow").addEventListener("click",function(){
-  try{ showText($("jsonIn").value); }
-  catch(e){ $("banner").textContent="Der eingefügte Text konnte nicht gelesen werden. Bitte die komplette AWEKAS-Antwort einfügen. In Firefox am besten im Reiter „Rohdaten“ auf „Kopieren“ klicken."; $("banner").classList.add("show"); }
-});
-$("jsonPaste").addEventListener("click",function(){
-  if(!navigator.clipboard||!navigator.clipboard.readText){ $("jsonIn").focus(); return; }
-  navigator.clipboard.readText().then(function(t){ $("jsonIn").value=t; $("jsonShow").click(); }).catch(function(){ $("jsonIn").focus(); });
-});
-// Lesezeichen-Code: liest den JSON-Text der geöffneten AWEKAS-Seite und öffnet dieses Dashboard damit
-var base=location.href.split("#")[0].split("?")[0];
-$("bmCode").value="javascript:(function(){var e=document.querySelector('pre')||document.body;location.href='"+base+"#'+encodeURIComponent(e.innerText)})()";
-$("bmCopy").addEventListener("click",function(){
-  var f=$("bmCode"); f.select();
-  try{ navigator.clipboard.writeText(f.value); }catch(e){ document.execCommand("copy"); }
-});
 
 document.addEventListener("visibilitychange",function(){ if(!document.hidden) load(); });
 start();

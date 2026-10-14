@@ -49,9 +49,7 @@ body{margin:0;min-height:100vh;background:radial-gradient(1200px 600px at 50% -1
 .cell svg{display:block;width:100%;height:auto}
 .cap{font-size:12.5px;color:var(--mute);margin-top:2px;line-height:1.35;min-height:2.7em}
 .cap b{color:var(--ink);font-weight:600}
-details{margin:18px 4px 0;color:var(--mute);font-size:13px}
 summary{cursor:pointer}
-textarea{width:100%;margin-top:8px;padding:9px 11px;border-radius:8px;border:1px solid var(--line);background:var(--panel2);color:var(--ink);font:13px/1.35 ui-monospace,Consolas,monospace}
 .btns{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}
 .btns button{padding:8px 15px;border:0;border-radius:8px;background:#4a86c5;color:#fff;font-weight:700;font-size:14px;cursor:pointer}
 .btns button.alt{background:var(--panel2);color:var(--ink);border:1px solid var(--line)}
@@ -84,15 +82,6 @@ footer a{color:#a9c9e6}
     <a class="histbtn" href="https://www.awekas.at/de/instrument.php4?id=24938&amp;reload=2#day" target="_blank" rel="noopener">Verlauf und Monatswerte bei AWEKAS</a>
   </section>
 
-  <details id="man">
-    <summary>JSON manuell laden</summary>
-    <textarea id="jsonIn" rows="4" placeholder="Antwort von api.awekas.at/current.php hier einfügen"></textarea>
-    <div class="btns">
-      <button id="jsonShow" type="button">Anzeigen</button>
-      <button id="jsonPaste" type="button" class="alt">Aus Zwischenablage</button>
-    </div>
-  </details>
-
   <footer>
     <span>Daten: <a href="https://www.awekas.at/" target="_blank" rel="noopener">AWEKAS</a> · <a href="https://www.awekas.at/de/instrument.php4?id=24938&amp;reload=2#day" target="_blank" rel="noopener">Verlauf und Monatswerte</a> · <a href="index.html">Ausführliche Ansicht</a></span>
     <span id="fetchInfo"></span>
@@ -103,7 +92,7 @@ footer a{color:#a9c9e6}
 <script>
 (function(){
 "use strict";
-var API="https://api.awekas.at/current.php?key=", WORKER_URL="https://wetter.eweiter.workers.dev", REFRESH_MS=60*1000, STALE_S=30*60;
+var WORKER_URL="https://wetter.eweiter.workers.dev", REFRESH_MS=60*1000, STALE_S=30*60;
 var DEMO={fetchdate:0,error:null,current:{datatimestamp:0,timeoffset:7200,temperature:9.1,dewpoint:5.4,humidity:77,airpress_rel:1020.7,tendency:-1,
   precipitation:0,rainrate:0,windspeed:0,gustspeed:0,winddirection:16,uv:0.7,solar:103,indoortemperature:20.4,indoorhumidity:48},"1h":{precipitation_1h:0},
   day:{temp_min:6.2,temp_max:13.8,dewpoint_min:4,dewpoint_max:7,hum_min:47,hum_max:87,airp_rel_min:1019.4,airp_rel_max:1020.7,windspeed_max:7.1,gustspeed_max:7.9,solar_max:103,uv_max:.8,intemp_min:19.9,intemp_max:20.4,precipitation_24h:0}};
@@ -286,7 +275,6 @@ function render(json,live,note){
 }
 
 /* ---------- Laden ---------- */
-function key(){try{var q=new URLSearchParams(location.search).get("key");return q?q.replace(/ /g,"+"):""}catch(e){return""}}
 function fallback(note){
   var last=null; try{last=JSON.parse(localStorage.getItem("awekas_last")||"null")}catch(e){}
   if(last&&last.current){manual=true;render(last,true,note+" Gezeigt werden die zuletzt gespeicherten Daten.")}
@@ -294,53 +282,17 @@ function fallback(note){
 }
 function handle(j){
   if(j.error){
-    var m={"invalid key":"Der API-Key ist ungültig.","maximum quota exceeded":"Das Abruflimit ist erreicht.","AWEKAS plus not active":"AWEKASplus ist im Profil nicht aktiv."};
+    var m={"invalid key":"Der API-Key im Cloudflare Worker ist ungültig.","maximum quota exceeded":"Das Abruflimit ist erreicht.","AWEKAS plus not active":"AWEKASplus ist im Profil nicht aktiv."};
     fallback(m[j.error]||("AWEKAS meldet: "+j.error)); return;
   }
   try{localStorage.setItem("awekas_last",JSON.stringify(j))}catch(e){}
   render(j,true,null);
 }
-function parseTree(text){
-  var o={},cur=o;
-  text.split(/\r?\n/).forEach(function(line){
-    var t=line.trim(); if(!t) return;
-    var m=t.match(/^(\S+)\s+(.*)$/); if(!m){cur=o[t]={};return}
-    var v=m[2].trim();
-    if(v==="null")v=null;else if(v==="true")v=true;else if(v==="false")v=false;
-    else if(/^-?\d+(\.\d+)?$/.test(v))v=Number(v);else v=v.replace(/^"|"$/g,"");
-    cur[m[1]]=v;
-  });
-  return o;
-}
-function showText(text){
-  var j=null,a=text.indexOf("{"),z=text.lastIndexOf("}");
-  if(a>=0&&z>a){try{j=JSON.parse(text.slice(a,z+1))}catch(e){}}
-  if(!j) j=parseTree(text);
-  if(!j||!j.current) throw new Error("kein JSON");
-  hold=true;manual=true;handle(j);
-}
 function getJson(u){return fetch(u,{cache:"no-store"}).then(function(r){if(!r.ok)throw new Error("HTTP "+r.status);return r.json()})}
-function direct(){
-  var k=key();
-  if(!k){fallback("Kein Live-Abruf möglich. Unter „JSON manuell laden“ gibt es einen Weg ohne Server.");$("man").open=true;return}
-  getJson(API+encodeURIComponent(k)).then(handle).catch(function(){
-    fallback("Direkter Abruf nicht möglich (AWEKAS erlaubt Abrufe von fremden Seiten vermutlich nicht).");$("man").open=true;
-  });
-}
 function load(){
   if(hold) return;
-  if(/^https?:/.test(location.protocol)){
-    getJson(WORKER_URL).catch(function(){return getJson("data.json?t="+Date.now())}).then(function(j){got(j);try{auto(j)}catch(e){}}).catch(direct);
-  } else direct();
+  getJson(WORKER_URL).catch(function(){return getJson("data.json?t="+Date.now())}).then(function(j){got(j);try{auto(j)}catch(e){}}).catch(function(){fallback("Abruf nicht möglich. Der nächste Versuch folgt automatisch.")});
 }
-$("jsonShow").addEventListener("click",function(){
-  try{showText($("jsonIn").value)}
-  catch(e){$("banner").textContent="Der eingefügte Text konnte nicht gelesen werden. Bitte die komplette AWEKAS-Antwort einfügen.";$("banner").classList.add("show")}
-});
-$("jsonPaste").addEventListener("click",function(){
-  if(!navigator.clipboard||!navigator.clipboard.readText){$("jsonIn").focus();return}
-  navigator.clipboard.readText().then(function(t){$("jsonIn").value=t;$("jsonShow").click()}).catch(function(){$("jsonIn").focus()});
-});
 document.addEventListener("visibilitychange",function(){if(!document.hidden)load()});
 
 /* ---------- Aktualisierung ---------- */
@@ -349,9 +301,7 @@ function got(j){handle(j)}
 function auto(j){}
 $("refreshNow").addEventListener("click",function(){$("statusTxt").textContent="Aktualisierung läuft …";load()});
 
-var hs=location.hash.length>1?location.hash.slice(1):"";
-if(hs){try{showText(decodeURIComponent(hs))}catch(e){fallback("Die Daten in der Adresse konnten nicht gelesen werden.")}}
-else if(window.AWEKAS_DATA){handle(window.AWEKAS_DATA);setTimeout(function(){location.reload()},REFRESH_MS+15000)}
+if(window.AWEKAS_DATA){handle(window.AWEKAS_DATA);setTimeout(function(){location.reload()},REFRESH_MS+15000)}
 else{load();setInterval(function(){if(!document.hidden)load()},REFRESH_MS)}
 })();
 </script>
