@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wetter Wincheringen – Verlauf und Statistik</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#eef2f8; --surface:#ffffff; --surface-2:#eef1f6; --track:#e1e6ee;
+    --text-primary:#111621; --text-secondary:#4b5568; --text-muted:#7c859a;
+    --border:rgba(17,22,33,0.08);
+    --shadow:0 1px 2px rgba(17,22,33,0.04), 0 8px 24px -12px rgba(17,22,33,0.12);
+    --accent-temp:#eb6834; --accent-dew:#2a78d6; --accent-press:#4a3aa7;
+    --accent-solar:#d99400; --accent-wind:#4f8fdc; --accent-gust:#1c5cab; --accent-rain:#256abf;
+    --warn:#e3a008; --critical:#d03b3b;
+    --f-display:"Archivo","IBM Plex Sans",system-ui,sans-serif;
+    --f-body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+    --f-mono:"IBM Plex Mono",ui-monospace,Consolas,monospace;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      color-scheme:dark;
+      --bg:#0d0f14; --surface:#171a22; --surface-2:#1d212b; --track:#2b3040;
+      --text-primary:#f4f6fb; --text-secondary:#b7bfd1; --text-muted:#8089a0;
+      --border:rgba(255,255,255,0.08);
+      --shadow:0 1px 2px rgba(0,0,0,0.3), 0 8px 24px -12px rgba(0,0,0,0.5);
+      --accent-temp:#f0794a; --accent-dew:#3987e5; --accent-press:#9085e9;
+      --accent-solar:#e8b23a; --accent-wind:#5598e7; --accent-gust:#86b6ef; --accent-rain:#5598e7;
+    }
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--text-primary);font-family:var(--f-body);-webkit-font-smoothing:antialiased;}
+  .wrap{max-width:1080px;margin:0 auto;padding:24px 16px 40px;}
+  .mono{font-family:var(--f-mono);font-variant-numeric:tabular-nums;}
+
+  header{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:12px 20px;margin-bottom:18px;}
+  h1{font-family:var(--f-display);font-weight:800;font-size:clamp(24px,4vw,32px);margin:0;letter-spacing:-0.01em;}
+  h1 span{color:var(--text-muted);}
+  .lead{color:var(--text-secondary);font-size:14px;margin-top:2px;}
+  nav{display:flex;gap:6px;flex-wrap:wrap;}
+  nav a{padding:6px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text-secondary);font-weight:600;font-size:13px;text-decoration:none;}
+  nav a:hover{color:var(--text-primary);}
+  nav a[aria-current="page"]{background:var(--text-primary);color:var(--bg);border-color:transparent;}
+
+  .banner{padding:10px 14px;border-radius:10px;background:var(--surface-2);border:1px solid var(--border);color:var(--text-secondary);font-size:13px;margin-bottom:16px;line-height:1.5;}
+  .banner[data-kind="error"]{border-color:var(--critical);}
+
+  .bar{display:flex;flex-wrap:wrap;gap:12px 16px;align-items:center;justify-content:space-between;margin-bottom:14px;}
+  .seg{display:inline-flex;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:3px;gap:2px;flex-wrap:wrap;}
+  .seg button{font:inherit;font-size:13px;font-weight:600;border:0;background:transparent;color:var(--text-secondary);padding:6px 14px;border-radius:7px;cursor:pointer;}
+  .seg button[aria-pressed="true"],.seg button[aria-selected="true"]{background:var(--text-primary);color:var(--bg);}
+  .seg button:focus-visible{outline:2px solid var(--accent-dew);outline-offset:2px;}
+  .status{font-size:12px;color:var(--text-muted);}
+
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,460px),1fr));gap:14px;}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow);padding:16px 18px 14px;min-width:0;}
+  .card h2{font-family:var(--f-display);font-size:16px;margin:0;font-weight:700;}
+  .card .stat{font-size:12px;color:var(--text-muted);margin:2px 0 10px;min-height:1.3em;}
+  .chartbox{position:relative;height:230px;}
+  .chartbox.tall{height:300px;}
+  .card.wide{grid-column:1/-1;}
+
+  .table-wrap{overflow-x:auto;}
+  table{width:100%;border-collapse:collapse;font-size:14px;min-width:420px;}
+  th,td{padding:9px 12px;border-top:1px solid var(--border);text-align:right;white-space:nowrap;}
+  thead th{border-top:0;color:var(--text-muted);font-size:12px;font-weight:600;}
+  th:first-child,td:first-child{text-align:left;}
+  td{font-family:var(--f-mono);font-weight:600;font-variant-numeric:tabular-nums;}
+  td .d{color:var(--text-muted);font-weight:500;font-size:12px;margin-left:6px;}
+
+  footer{margin-top:26px;padding-top:14px;border-top:1px solid var(--border);font-size:12px;color:var(--text-muted);line-height:1.6;}
+  @media (prefers-reduced-motion: reduce){*{animation:none !important;transition:none !important;}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Wincheringen<span>-Mont</span></h1>
+      <div class="lead">Verlauf und Jahresvergleich</div>
+    </div>
+    <!-- Dateinamen ggf. an deine Seiten anpassen -->
+    <nav aria-label="Seiten">
+      <a href="instrumente.html">Messinstrumente</a>
+      <a href="index.html">Detaildaten</a>
+      <a href="statistik.html" aria-current="page">Statistik</a>
+    </nav>
+  </header>
+
+  <div class="banner" id="notice" hidden></div>
+
+  <div class="bar">
+    <div class="seg" role="tablist" aria-label="Ansicht">
+      <button type="button" role="tab" id="tabV" data-tab="verlauf" aria-selected="true">Verlauf</button>
+      <button type="button" role="tab" id="tabJ" data-tab="jahre" aria-selected="false">Jahresvergleich</button>
+    </div>
+    <span class="status" id="status">Lädt …</span>
+  </div>
+
+  <!-- Verlauf -->
+  <section id="panelV" role="tabpanel" aria-labelledby="tabV">
+    <div class="bar">
+      <div class="seg" id="rangeSeg" aria-label="Zeitraum">
+        <button type="button" data-range="24h" aria-pressed="true">24 Stunden</button>
+        <button type="button" data-range="7d" aria-pressed="false">7 Tage</button>
+        <button type="button" data-range="30d" aria-pressed="false">30 Tage</button>
+      </div>
+    </div>
+    <div class="grid" id="gridV"></div>
+  </section>
+
+  <!-- Jahresvergleich -->
+  <section id="panelJ" role="tabpanel" aria-labelledby="tabJ" hidden>
+    <div class="bar">
+      <div class="seg" id="metricSeg" aria-label="Messgröße"></div>
+    </div>
+    <div class="grid">
+      <div class="card wide">
+        <h2 id="monthTitle">Monatswerte</h2>
+        <div class="stat" id="monthStat"></div>
+        <div class="chartbox tall"><canvas id="cMonths"></canvas></div>
+      </div>
+      <div class="card wide" id="cumCard">
+        <h2 id="cumTitle">Verlauf im Jahr (aufsummiert)</h2>
+        <div class="stat" id="cumStat"></div>
+        <div class="chartbox tall"><canvas id="cCum"></canvas></div>
+      </div>
+      <div class="card wide">
+        <h2>Jahre im Überblick</h2>
+        <div class="stat" id="tableStat"></div>
+        <div class="table-wrap"><table><thead id="tHead"></thead><tbody id="tBody"></tbody></table></div>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    Daten: <a href="https://www.awekas.at/" target="_blank" rel="noopener" style="color:inherit">AWEKAS</a>, Station Wincheringen-Mont (ID 24938).
+    Das Archiv speichert alle 5 Minuten einen Messwert. Sonnenenergie ist aus diesen Stichproben berechnet und daher eine Näherung.
+    Tage mit Lücken in der Aufzeichnung können zu niedrige Summen zeigen.
+  </footer>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.js"></script>
+<script>
+(function(){
+  "use strict";
+  var API = "https://wetter-archiv.eweiter.workers.dev";
+  var TZ = "Europe/Berlin";
+
+  function $(id){ return document.getElementById(id); }
+  function css(n){ return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
+  function has(x){ return x !== null && x !== undefined && !isNaN(x); }
+  function num(x, d){ return has(x) ? Number(x).toLocaleString("de-DE", {minimumFractionDigits:d, maximumFractionDigits:d}) : "–"; }
+  function minOf(a){ var r = a.filter(has); return r.length ? Math.min.apply(null, r) : null; }
+  function maxOf(a){ var r = a.filter(has); return r.length ? Math.max.apply(null, r) : null; }
+
+  var fHour = new Intl.DateTimeFormat("de-DE", {timeZone:TZ, hour:"2-digit", minute:"2-digit"});
+  var fDay  = new Intl.DateTimeFormat("de-DE", {timeZone:TZ, day:"2-digit", month:"2-digit"});
+  var fFull = new Intl.DateTimeFormat("de-DE", {timeZone:TZ, weekday:"short", day:"2-digit", month:"2-digit", hour:"2-digit", minute:"2-digit"});
+  var fDate = new Intl.DateTimeFormat("de-DE", {timeZone:"UTC", day:"2-digit", month:"2-digit", year:"numeric"});
+  var MONTHS = ["Jan","Feb","Mär","Apr","Mai","Jun","Jul","Aug","Sep","Okt","Nov","Dez"];
+
+  function getJson(path){
+    return fetch(API + path).then(function(r){
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return r.json();
+    }).then(function(j){ if (j.error) throw new Error(j.error); return j; });
+  }
+  function setStatus(t){ $("status").textContent = t; }
+  function notice(msg, kind){ var n = $("notice"); if (!msg){ n.hidden = true; return; } n.textContent = msg; n.dataset.kind = kind || "info"; n.hidden = false; }
+
+  // ---------- Chart.js Grundeinstellung ----------
+  function applyDefaults(){
+    Chart.defaults.color = css("--text-muted");
+    Chart.defaults.font.family = css("--f-body");
+    Chart.defaults.font.size = 11;
+    Chart.defaults.borderColor = css("--border");
+  }
+  var charts = {};
+  function mount(id, cfg){
+    if (charts[id]) charts[id].destroy();
+    charts[id] = new Chart($(id), cfg);
+  }
+  function baseOptions(legend){
+    return {
+      responsive:true, maintainAspectRatio:false, animation:false,
+      interaction:{mode:"index", intersect:false},
+      plugins:{ legend:{display:legend, position:"bottom", labels:{boxWidth:10, boxHeight:10}} },
+      scales:{ x:{grid:{display:false}, ticks:{maxRotation:0, autoSkip:true, maxTicksLimit:7}}, y:{grid:{color:css("--border")}} }
+    };
+  }
+
+  // ---------- Verlauf ----------
+  var VIEW = [
+    {id:"temp",  title:"Temperatur", unit:"°C",   dig:1, lines:[{k:"temp", label:"Temperatur", c:"--accent-temp"}, {k:"dew", label:"Taupunkt", c:"--accent-dew"}]},
+    {id:"rain",  title:"Niederschlag", unit:"mm", dig:1},
+    {id:"wind",  title:"Wind", unit:"km/h",       dig:1, lines:[{k:"wind", label:"Mittel", c:"--accent-wind"}, {k:"gust", label:"Böen", c:"--accent-gust"}]},
+    {id:"solar", title:"Sonneneinstrahlung", unit:"W/m²", dig:0, lines:[{k:"solar", label:"Einstrahlung", c:"--accent-solar", fill:true}]},
+    {id:"press", title:"Luftdruck", unit:"hPa",   dig:1, lines:[{k:"press", label:"Luftdruck", c:"--accent-press"}]},
+    {id:"hum",   title:"Luftfeuchte", unit:"%",   dig:0, lines:[{k:"hum", label:"Luftfeuchte", c:"--accent-dew"}]}
+  ];
+  var state = {range:"24h", series:null, daily:null, year:null, metric:"rain"};
+
+  function buildCards(){
+    $("gridV").innerHTML = VIEW.map(function(d){
+      return '<div class="card"><h2>'+d.title+'</h2><div class="stat" id="st-'+d.id+'"></div>' +
+             '<div class="chartbox"><canvas id="c-'+d.id+'"></canvas></div></div>';
+    }).join("");
+  }
+
+  function renderVerlauf(){
+    var S = state.series; if (!S) return;
+    var rows = S.rows, range = state.range;
+    var ts = rows.map(function(r){ return r.t; });
+    function tick(v){ var t = ts[v]; if (t === undefined) return ""; return range === "24h" ? fHour.format(new Date(t*1000)) : fDay.format(new Date(t*1000)); }
+    function title(items){ return fFull.format(new Date(ts[items[0].dataIndex]*1000)); }
+
+    VIEW.forEach(function(d){
+      var stat = $("st-"+d.id);
+      if (d.id === "rain"){ renderRain(d, rows, ts, tick, title, stat); return; }
+      var datasets = d.lines.map(function(l){
+        var col = css(l.c);
+        return {label:l.label, data:rows.map(function(r){ return has(r[l.k]) ? r[l.k] : null; }),
+                borderColor:col, backgroundColor:l.fill ? col + "33" : col, fill:!!l.fill,
+                borderWidth:2, pointRadius:0, pointHoverRadius:3, tension:.25, spanGaps:true};
+      });
+      var o = baseOptions(d.lines.length > 1);
+      o.scales.x.ticks.callback = tick;
+      o.plugins.tooltip = {callbacks:{title:title, label:function(c){ return c.dataset.label + ": " + num(c.parsed.y, d.dig) + " " + d.unit; }}};
+      mount("c-"+d.id, {type:"line", data:{labels:ts, datasets:datasets}, options:o});
+
+      var main = d.lines[0].k, vals = rows.map(function(r){ return r[main]; });
+      if (d.id === "wind"){ stat.textContent = "Stärkste Böe " + num(maxOf(rows.map(function(r){ return r.gust; })), 1) + " km/h"; }
+      else if (d.id === "solar"){ stat.textContent = "Spitze " + num(maxOf(vals), 0) + " W/m² · UV max. " + num(maxOf(rows.map(function(r){ return r.uv; })), 1); }
+      else { stat.textContent = "min " + num(minOf(vals), d.dig) + " · max " + num(maxOf(vals), d.dig) + " " + d.unit; }
+    });
+  }
+
+  function renderRain(d, rows, ts, tick, title, stat){
+    var col = css("--accent-rain"), o = baseOptions(false);
+    if (state.range === "24h"){
+      var rates = rows.map(function(r){ return has(r.rainrate) ? r.rainrate : null; });
+      o.scales.x.ticks.callback = tick;
+      o.plugins.tooltip = {callbacks:{title:title, label:function(c){ return "Regenrate: " + num(c.parsed.y, 2) + " mm/h"; }}};
+      mount("c-rain", {type:"line", data:{labels:ts, datasets:[{label:"Regenrate", data:rates, borderColor:col, backgroundColor:col+"33", fill:true, borderWidth:2, pointRadius:0, tension:.2, spanGaps:true}]}, options:o});
+      stat.textContent = "Regenrate, max. " + num(maxOf(rates), 1) + " mm/h";
+      return;
+    }
+    var days = state.daily ? state.daily.rows : [];
+    var labels = days.map(function(r){ var p = r.day.split("-"); return p[2] + "." + p[1] + "."; });
+    var vals = days.map(function(r){ return has(r.rain_mm) ? r.rain_mm : null; });
+    o.scales.x.ticks.maxTicksLimit = 10;
+    o.plugins.tooltip = {callbacks:{label:function(c){ return num(c.parsed.y, 1) + " mm"; }}};
+    mount("c-rain", {type:"bar", data:{labels:labels, datasets:[{data:vals, backgroundColor:col, borderRadius:3}]}, options:o});
+    var sum = vals.filter(has).reduce(function(a,b){ return a+b; }, 0);
+    stat.textContent = "Summe " + num(sum, 1) + " mm · Tagessummen";
+  }
+
+  function loadVerlauf(){
+    var range = state.range;
+    setStatus("Lädt …");
+    var n = range === "7d" ? 7 : 30;
+    var from = new Date(Date.now() - n*864e5).toISOString().slice(0,10);
+    var jobs = [getJson("/api/series?range=" + range)];
+    if (range !== "24h") jobs.push(getJson("/api/daily?from=" + from));
+    return Promise.all(jobs).then(function(res){
+      if (range !== state.range) return;
+      state.series = res[0]; state.daily = res[1] || null;
+      if (!state.series.rows.length){ notice("Noch keine Daten im Archiv. Die Aufzeichnung startet mit dem ersten 5-Minuten-Abruf des Workers."); }
+      else if (!$("notice").dataset.keep){ notice(null); }
+      renderVerlauf();
+      var last = state.series.rows.length ? state.series.rows[state.series.rows.length-1].t : null;
+      setStatus(last ? "Letzte Messung " + fFull.format(new Date(last*1000)) + " Uhr" : "Keine Daten");
+    });
+  }
+
+  // ---------- Jahresvergleich ----------
+  var METRICS = {
+    rain:  {label:"Niederschlag",   unit:"mm",     field:"rain_mm",   agg:"sum", dig:0, peak:"rain_mm",  peakLabel:"Nassester Tag", peakDig:1},
+    solar: {label:"Sonnenenergie",  unit:"kWh/m²", field:"solar_kwh", agg:"sum", dig:0, peak:"solar_kwh",peakLabel:"Sonnigster Tag", peakDig:1},
+    temp:  {label:"Temperatur",     unit:"°C",     field:"temp_avg",  agg:"avg", dig:1, peak:"temp_max", peakLabel:"Wärmster Tag", peakDig:1},
+    gust:  {label:"Böen",           unit:"km/h",   field:"gust_max",  agg:"max", dig:0, peak:"gust_max", peakLabel:"Stärkste Böe", peakDig:0}
+  };
+  var AGG_WORD = {sum:"Summe", avg:"Durchschnitt", max:"Maximum"};
+  var PALETTE = ["#2a78d6","#eb6834","#1baf7a","#4a3aa7","#d99400","#d03b3b","#7c859a"];
+  function yearColor(i){ return PALETTE[i % PALETTE.length]; }
+
+  function aggregate(vals, how){
+    var v = vals.filter(has);
+    if (!v.length) return null;
+    if (how === "sum") return v.reduce(function(a,b){ return a+b; }, 0);
+    if (how === "avg") return v.reduce(function(a,b){ return a+b; }, 0) / v.length;
+    return Math.max.apply(null, v);
+  }
+  function doyOf(day){
+    var p = day.split("-").map(Number);
+    return Math.round((Date.UTC(p[0], p[1]-1, p[2]) - Date.UTC(p[0], 0, 0)) / 864e5);
+  }
+  var MONTH_START = [1,32,60,91,121,152,182,213,244,274,305,335];
+  function doyLabel(doy){ return fDay.format(new Date(Date.UTC(2001, 0, doy, 12))); }
+
+  function buildMetricButtons(){
+    $("metricSeg").innerHTML = Object.keys(METRICS).map(function(k){
+      return '<button type="button" data-metric="'+k+'" aria-pressed="'+(k===state.metric)+'">'+METRICS[k].label+'</button>';
+    }).join("");
+  }
+
+  function renderJahre(){
+    var rows = state.year ? state.year.rows : null; if (!rows) return;
+    var M = METRICS[state.metric];
+    var byYear = {};
+    rows.forEach(function(r){ var y = r.day.slice(0,4); (byYear[y] = byYear[y] || []).push(r); });
+    var years = Object.keys(byYear).sort();
+
+    if (!years.length){
+      notice("Noch keine Tageswerte vorhanden. Der Jahresvergleich füllt sich mit der Zeit.");
+      ["cMonths","cCum"].forEach(function(id){ if (charts[id]){ charts[id].destroy(); delete charts[id]; } });
+      $("tHead").innerHTML = ""; $("tBody").innerHTML = ""; return;
+    }
+    notice(years.length < 2 ? "Bisher liegt nur " + years[0] + " im Archiv. Ein Vergleich entsteht, sobald ein zweites Jahr Daten hat." : null);
+
+    // Monatsvergleich
+    $("monthTitle").textContent = M.label + " je Monat (" + AGG_WORD[M.agg] + ", " + M.unit + ")";
+    $("monthStat").textContent = "Jedes Jahr eine Farbe";
+    var monthSets = years.map(function(y, i){
+      var data = [];
+      for (var m = 0; m < 12; m++){
+        var vals = byYear[y].filter(function(r){ return Number(r.day.slice(5,7)) === m+1; }).map(function(r){ return r[M.field]; });
+        data.push(aggregate(vals, M.agg));
+      }
+      return {label:y, data:data, backgroundColor:yearColor(i), borderRadius:3};
+    });
+    var o1 = baseOptions(true);
+    o1.plugins.tooltip = {callbacks:{label:function(c){ return c.dataset.label + ": " + num(c.parsed.y, M.dig === 0 ? 0 : 1) + " " + M.unit; }}};
+    mount("cMonths", {type:"bar", data:{labels:MONTHS, datasets:monthSets}, options:o1});
+
+    // Aufsummierter Jahresverlauf (nur für Summen)
+    $("cumCard").hidden = M.agg !== "sum";
+    if (M.agg === "sum"){
+      $("cumTitle").textContent = M.label + " aufsummiert im Jahresverlauf (" + M.unit + ")";
+      $("cumStat").textContent = "Zeigt, wie sich die Jahre gegeneinander entwickeln";
+      var labels = []; for (var d = 1; d <= 366; d++) labels.push(d);
+      var cumSets = years.map(function(y, i){
+        var perDay = new Array(366).fill(0), last = 0;
+        byYear[y].forEach(function(r){ var k = doyOf(r.day); if (has(r[M.field])){ perDay[k-1] += r[M.field]; } if (k > last) last = k; });
+        var data = [], acc = 0;
+        for (var k = 0; k < last; k++){ acc += perDay[k]; data.push(Math.round(acc*10)/10); }
+        var isLast = i === years.length - 1;
+        return {label:y, data:data, borderColor:yearColor(i), backgroundColor:yearColor(i), borderWidth:isLast ? 3 : 1.8, pointRadius:0, pointHoverRadius:3, tension:0, stepped:false};
+      });
+      var o2 = baseOptions(true);
+      o2.scales.x.ticks.autoSkip = false;
+      o2.scales.x.ticks.callback = function(v){ var i = MONTH_START.indexOf(Number(v) + 1); return i >= 0 ? MONTHS[i] : ""; };
+      o2.plugins.tooltip = {callbacks:{title:function(items){ return doyLabel(items[0].dataIndex + 1); }, label:function(c){ return c.dataset.label + ": " + num(c.parsed.y, 1) + " " + M.unit; }}};
+      mount("cCum", {type:"line", data:{labels:labels, datasets:cumSets}, options:o2});
+    } else if (charts.cCum){ charts.cCum.destroy(); delete charts.cCum; }
+
+    // Tabelle
+    $("tableStat").textContent = AGG_WORD[M.agg] + " über das ganze Jahr; das laufende Jahr ist unvollständig.";
+    $("tHead").innerHTML = "<tr><th>Jahr</th><th>" + AGG_WORD[M.agg] + " (" + M.unit + ")</th><th>Tage mit Daten</th><th>" + M.peakLabel + "</th></tr>";
+    $("tBody").innerHTML = years.slice().reverse().map(function(y){
+      var list = byYear[y];
+      var total = aggregate(list.map(function(r){ return r[M.field]; }), M.agg);
+      var best = null;
+      list.forEach(function(r){ if (has(r[M.peak]) && (!best || r[M.peak] > best[M.peak])) best = r; });
+      var peakTxt = best ? num(best[M.peak], M.peakDig) + " " + (M.peak === "rain_mm" ? "mm" : M.peak === "solar_kwh" ? "kWh/m²" : M.peak === "temp_max" ? "°C" : "km/h") + '<span class="d">' + best.day.slice(8,10) + "." + best.day.slice(5,7) + ".</span>" : "–";
+      return "<tr><td>" + y + "</td><td>" + num(total, M.dig === 0 ? 0 : 1) + "</td><td>" + list.length + "</td><td>" + peakTxt + "</td></tr>";
+    }).join("");
+  }
+
+  function loadJahre(){
+    if (state.year){ renderJahre(); return Promise.resolve(); }
+    setStatus("Lädt …");
+    return getJson("/api/daily").then(function(j){
+      state.year = j; renderJahre();
+      setStatus(j.rows.length ? j.rows.length + " Tage im Archiv, seit " + fDate.format(new Date(j.rows[0].day + "T00:00:00Z")) : "Keine Daten");
+    });
+  }
+
+  // ---------- Bedienung ----------
+  function fail(e){
+    setStatus("Fehler");
+    notice("Das Archiv ist nicht erreichbar (" + (e && e.message ? e.message : "unbekannt") + "). Prüfe, ob der Worker wetter-archiv läuft und die Adresse oben im Skript stimmt.", "error");
+    $("notice").dataset.keep = "1";
+  }
+  function showTab(t){
+    var v = t === "verlauf";
+    $("panelV").hidden = !v; $("panelJ").hidden = v;
+    $("tabV").setAttribute("aria-selected", v); $("tabJ").setAttribute("aria-selected", !v);
+    notice(null); delete $("notice").dataset.keep;
+    (v ? loadVerlauf() : loadJahre()).catch(fail);
+  }
+  document.querySelectorAll("[data-tab]").forEach(function(b){ b.addEventListener("click", function(){ showTab(b.dataset.tab); }); });
+  $("rangeSeg").addEventListener("click", function(e){
+    var b = e.target.closest("button"); if (!b) return;
+    state.range = b.dataset.range;
+    this.querySelectorAll("button").forEach(function(x){ x.setAttribute("aria-pressed", x === b); });
+    loadVerlauf().catch(fail);
+  });
+  $("metricSeg").addEventListener("click", function(e){
+    var b = e.target.closest("button"); if (!b) return;
+    state.metric = b.dataset.metric;
+    this.querySelectorAll("button").forEach(function(x){ x.setAttribute("aria-pressed", x === b); });
+    renderJahre();
+  });
+  window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", function(){
+    applyDefaults(); if (!$("panelV").hidden) renderVerlauf(); else renderJahre();
+  });
+
+  applyDefaults();
+  buildCards();
+  buildMetricButtons();
+  loadVerlauf().catch(fail);
+})();
+</script>
+</body>
+</html>
