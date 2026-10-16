@@ -290,6 +290,11 @@ footer a{color:inherit}
   var PALETTE = ["#2a78d6","#eb6834","#1baf7a","#4a3aa7","#d99400","#d03b3b","#7c859a"];
   function yearColor(i){ return PALETTE[i % PALETTE.length]; }
 
+  function nv(v, M){
+    if (!has(v)) return "–";
+    if (M.agg === "sum") return num(v, v < 10 ? 2 : (v < 100 ? 1 : 0));
+    return num(v, M.dig === 0 ? 0 : 1);
+  }
   function aggregate(vals, how){
     var v = vals.filter(has);
     if (!v.length) return null;
@@ -336,7 +341,7 @@ footer a{color:inherit}
       return {label:y, data:data, backgroundColor:yearColor(i), borderRadius:3};
     });
     var o1 = baseOptions(true);
-    o1.plugins.tooltip = {callbacks:{label:function(c){ return c.dataset.label + ": " + num(c.parsed.y, M.dig === 0 ? 0 : 1) + " " + M.unit; }}};
+    o1.plugins.tooltip = {callbacks:{label:function(c){ return c.dataset.label + ": " + nv(c.parsed.y, M) + " " + M.unit; }}};
     mount("cMonths", {type:"bar", data:{labels:MONTHS, datasets:monthSets}, options:o1});
 
     // Aufsummierter Jahresverlauf (nur für Summen)
@@ -356,7 +361,7 @@ footer a{color:inherit}
       var o2 = baseOptions(true);
       o2.scales.x.ticks.autoSkip = false;
       o2.scales.x.ticks.callback = function(v){ var i = MONTH_START.indexOf(Number(v) + 1); return i >= 0 ? MONTHS[i] : ""; };
-      o2.plugins.tooltip = {callbacks:{title:function(items){ return doyLabel(items[0].dataIndex + 1); }, label:function(c){ return c.dataset.label + ": " + num(c.parsed.y, 1) + " " + M.unit; }}};
+      o2.plugins.tooltip = {callbacks:{title:function(items){ return doyLabel(items[0].dataIndex + 1); }, label:function(c){ return c.dataset.label + ": " + nv(c.parsed.y, M) + " " + M.unit; }}};
       mount("cCum", {type:"line", data:{labels:labels, datasets:cumSets}, options:o2});
     } else if (charts.cCum){ charts.cCum.destroy(); delete charts.cCum; }
 
@@ -369,7 +374,7 @@ footer a{color:inherit}
       var best = null;
       list.forEach(function(r){ if (has(r[M.peak]) && (!best || r[M.peak] > best[M.peak])) best = r; });
       var peakTxt = best ? num(best[M.peak], M.peakDig) + " " + (M.peak === "rain_mm" ? "mm" : M.peak === "solar_kwh" ? "kWh/m²" : M.peak === "temp_max" ? "°C" : "km/h") + '<span class="d">' + best.day.slice(8,10) + "." + best.day.slice(5,7) + ".</span>" : "–";
-      return "<tr><td>" + y + "</td><td>" + num(total, M.dig === 0 ? 0 : 1) + "</td><td>" + list.length + "</td><td>" + peakTxt + "</td></tr>";
+      return "<tr><td>" + y + "</td><td>" + nv(total, M) + "</td><td>" + list.length + "</td><td>" + peakTxt + "</td></tr>";
     }).join("");
   }
 
