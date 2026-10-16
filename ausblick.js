@@ -236,8 +236,13 @@ var FCCSS=`
 .fc .pw{height:18px;color:var(--a-ink2);display:flex;align-items:center}
 .fc .pp{display:inline-flex;align-items:center;gap:3px;font-size:13px;font-weight:700;color:var(--a-rain)}
 .fc .pp svg{width:13px;height:13px}
-.fc .dh{display:flex;align-items:center;gap:10px;margin:16px 0 12px;font-family:var(--a-disp);font-size:15px;font-weight:700;color:var(--a-wind)}
-.fc .dh::after{content:"";flex:1;height:2px;background:var(--a-sun);opacity:.85;border-radius:2px}
+.fc .dh{margin:16px 0 12px;font-family:var(--a-disp);font-size:15px;font-weight:700;color:var(--a-wind)}
+.fc .dhb{font:inherit;color:inherit;background:none;border:0;padding:4px 0;margin:0;cursor:pointer;display:flex;align-items:center;gap:10px;width:100%;text-align:left;border-radius:8px}
+.fc .dhb:focus-visible{outline:3px solid var(--a-sun);outline-offset:2px}
+.fc .dhb .ln{flex:1;height:2px;background:var(--a-sun);opacity:.85;border-radius:2px}
+.fc .dhb .chev{flex:none;width:20px;height:20px;transition:transform .2s}
+.fc .dhb[aria-expanded="true"] .chev{transform:rotate(180deg)}
+.fc .dg[hidden]{display:none}
 .fc .dg{display:grid;grid-template-columns:1fr 1fr;gap:14px 12px}
 .fc .it{display:flex;align-items:center;gap:10px;min-width:0;font-size:14px;line-height:1.25;color:var(--a-ink)}
 .fc .it>div{min-width:0}
@@ -268,6 +273,13 @@ var FCCSS=`
 var st2=document.createElement("style");st2.textContent=FCCSS;document.head.appendChild(st2);
 
 var FC=null, selP=0, selD=0, lastFc=0;
+var OPEN={p:true,d:true};
+try{var sv=JSON.parse(localStorage.getItem("olOpen")||"null"); if(sv){OPEN.p=sv.p!==false;OPEN.d=sv.d!==false;}}catch(e){}
+function head(t,title){
+  return '<h3 class="dh"><button type="button" class="dhb" data-t="'+t+'" aria-expanded="'+OPEN[t]+'"><span>'+title+'</span><i class="ln"></i>'+
+    '<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button></h3>'+
+    '<div class="dg"'+(OPEN[t]?'':' hidden')+'>';
+}
 var DAYN=["Sonntag","Montag","Dienstag","Mittwoch","Donnerstag","Freitag","Samstag"];
 var PARTS=[{n:"Nacht",a:0,b:6},{n:"Morgen",a:6,b:12},{n:"Mittag",a:12,b:18},{n:"Abend",a:18,b:24}];
 var SNOWC={71:1,73:1,75:1,77:1,85:1,86:1};
@@ -426,7 +438,7 @@ function dayDetail(k){
   var nm=k===0?"heute":k===1?"morgen":DAYN[dow];
   var uv=d.uv_index_max?d.uv_index_max[k]:null;
   var ss=d.sunshine_duration?Math.round(d.sunshine_duration[k]/3600):null;
-  var html='<h3 class="dh">'+nm+' — '+esc(lab)+'</h3><div class="dg">'+
+  var html=head("d",nm+' — '+esc(lab))+
     item(ico("drop"),"tagsüber",esc(rainTxt(rainInfo(dayIx.length?dayIx:all))))+
     item(ico("drop"),"spät abends / nachts",esc(rainTxt(rainInfo(night))))+
     item(ico("rise"),"↑ "+hm(d.sunrise[k])+" ↓ "+hm(d.sunset[k]),ss!=null?"Sonnenschein "+ss+" h":"")+
@@ -439,7 +451,7 @@ function dayDetail(k){
 function periodDetail(a){
   var w=wmo(a.code,a.day), lab=(a.mm>=0.3&&a.pop>=40)?lc(w[1]):skyWord(a.cc,a.day);
   var wet=a.pop>=10||a.mm>=0.1;
-  return '<h3 class="dh">'+a.name+(a.tag?' '+a.tag:'')+' — '+esc(lab)+'</h3><div class="dg">'+
+  return head("p",a.name+(a.tag?' '+a.tag:'')+' — '+esc(lab))+
     item(ico("drop"),"Niederschlag",wet?r(a.pop)+" %"+(a.mm>=0.1?" · "+num1(a.mm)+" mm":""):"trocken")+
     item(ico("cloud"),"Bewölkung",r(a.cc)+" %")+
     item('<span class="cr">'+arrow(a.dir,18)+'</span>',esc(windTxt(a.ws,a.dir)))+
@@ -513,6 +525,13 @@ function loadForecast(){
    .catch(function(e){ if(!fcHtml){ fcHtml='<section class="card full"><h2>Vorhersage</h2><div class="olnote">Die Vorhersage ist gerade nicht verfügbar ('+esc(e&&e.message?e.message:e)+'). Neuer Versuch in wenigen Minuten.</div></section>'; renderOutlook(); } setTimeout(loadForecast,5*60*1000); });
 }
 $("outlook").addEventListener("click",function(e){
+  var tg=e.target.closest?e.target.closest("[data-t]"):null;
+  if(tg){
+    var t=tg.getAttribute("data-t"), box=tg.parentNode.nextElementSibling;
+    OPEN[t]=!OPEN[t]; tg.setAttribute("aria-expanded",OPEN[t]); if(box) box.hidden=!OPEN[t];
+    try{localStorage.setItem("olOpen",JSON.stringify(OPEN))}catch(err){}
+    return;
+  }
   var b=e.target.closest?e.target.closest("[data-p],[data-d]"):null;
   if(!b||!FC) return;
   if(b.hasAttribute("data-p")) selP=+b.getAttribute("data-p"); else { selD=+b.getAttribute("data-d"); selP=0; }
