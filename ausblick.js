@@ -281,7 +281,7 @@ function head(t,title){
     '<div class="dg"'+(OPEN[t]?'':' hidden')+'>';
 }
 var DAYN=["Sonntag","Montag","Dienstag","Mittwoch","Donnerstag","Freitag","Samstag"];
-var PARTS=[{n:"Nacht",a:0,b:6},{n:"Morgen",a:6,b:12},{n:"Mittag",a:12,b:18},{n:"Abend",a:18,b:24}];
+var PARTS=[{n:"Nacht",a:0,b:6},{n:"Vormittag",a:6,b:12},{n:"Mittag",a:12,b:18},{n:"Abend",a:18,b:24}];
 var SNOWC={71:1,73:1,75:1,77:1,85:1,86:1};
 var IC={
   gauge:'<path d="M4 17a8 8 0 1 1 16 0"/><path d="M12 17l4-5"/>',
