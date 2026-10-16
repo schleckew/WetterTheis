@@ -225,7 +225,7 @@ function initRadar(){
 var FCCSS=`
 #outlook{--tl:38%}
 @media (prefers-color-scheme:dark){#outlook{--tl:66%}}
-.fc .ptabs{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;margin:4px 0 0}
+.fc .ptabs{display:grid;grid-template-columns:repeat(var(--np,4),1fr);gap:4px;margin:4px 0 0}
 .fc .ptab{font:inherit;color:var(--a-ink);background:transparent;border:0;border-radius:14px;padding:8px 2px 8px;display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer;min-width:0}
 .fc .ptab.on{background:var(--a-card2)}
 .fc .ptab:focus-visible,.fc .dtab:focus-visible,.fc summary:focus-visible{outline:3px solid var(--a-sun);outline-offset:2px}
@@ -269,7 +269,7 @@ var st2=document.createElement("style");st2.textContent=FCCSS;document.head.appe
 
 var FC=null, selP=0, selD=0, lastFc=0;
 var DAYN=["Sonntag","Montag","Dienstag","Mittwoch","Donnerstag","Freitag","Samstag"];
-var PARTS=[{n:"Nacht",a:0,b:6},{n:"Vormittag",a:6,b:12},{n:"Nachmittag",a:12,b:18},{n:"Abend",a:18,b:24}];
+var PARTS=[{n:"Nacht",a:0,b:6},{n:"Morgen",a:6,b:12},{n:"Mittag",a:12,b:18},{n:"Abend",a:18,b:24}];
 var SNOWC={71:1,73:1,75:1,77:1,85:1,86:1};
 var IC={
   gauge:'<path d="M4 17a8 8 0 1 1 16 0"/><path d="M12 17l4-5"/>',
@@ -342,15 +342,23 @@ function agg(ix){
     rh:mean(col("relative_humidity_2m")), dew:mean(col("dew_point_2m")), pres:mean(col("pressure_msl")), cc:mean(col("cloud_cover"))
   };
 }
-function periods(){
-  var now=FC.now, d0=now.slice(0,10), H=+now.slice(11,13), p0=0, out=[];
-  for(var q=0;q<4;q++){ if(H>=PARTS[q].a&&H<PARTS[q].b) p0=q; }
-  for(var j=0;j<4;j++){
-    var q2=(p0+j)%4, date=(p0+j)>=4?addDay(d0,1):d0;
-    var ix=idxFor(date,PARTS[q2].a,PARTS[q2].b);
-    if(j===0) ix=ix.filter(function(i){return i>=FC.i0});
-    if(ix.length){ var a=agg(ix); a.name=PARTS[q2].n; out.push(a); }
+function nightTag(date){return "zum "+DAYN[new Date(date+"T12:00:00").getDay()]}
+function periods(k){
+  var now=FC.now, d0=now.slice(0,10), H=+now.slice(11,13), out=[], list=[];
+  if(k===0){
+    var p0=0;
+    for(var q=0;q<4;q++){ if(H>=PARTS[q].a&&H<PARTS[q].b) p0=q; }
+    for(var j=0;j<4;j++) list.push([(p0+j)%4,(p0+j)>=4?addDay(d0,1):d0,j===0]);
+  } else {
+    var date=FC.d.time[k];
+    list=[[1,date,false],[2,date,false],[3,date,false],[0,addDay(date,1),false]];
   }
+  list.forEach(function(e){
+    var ix=idxFor(e[1],PARTS[e[0]].a,PARTS[e[0]].b);
+    if(e[2]) ix=ix.filter(function(i){return i>=FC.i0});
+    if(!ix.length) return;
+    var a=agg(ix); a.name=PARTS[e[0]].n; a.tag=e[0]===0?nightTag(e[1]):""; out.push(a);
+  });
   return out;
 }
 
@@ -431,7 +439,7 @@ function dayDetail(k){
 function periodDetail(a){
   var w=wmo(a.code,a.day), lab=(a.mm>=0.3&&a.pop>=40)?lc(w[1]):skyWord(a.cc,a.day);
   var wet=a.pop>=10||a.mm>=0.1;
-  return '<h3 class="dh">'+a.name+' — '+esc(lab)+'</h3><div class="dg">'+
+  return '<h3 class="dh">'+a.name+(a.tag?' '+a.tag:'')+' — '+esc(lab)+'</h3><div class="dg">'+
     item(ico("drop"),"Niederschlag",wet?r(a.pop)+" %"+(a.mm>=0.1?" · "+num1(a.mm)+" mm":""):"trocken")+
     item(ico("cloud"),"Bewölkung",r(a.cc)+" %")+
     item('<span class="cr">'+arrow(a.dir,18)+'</span>',esc(windTxt(a.ws,a.dir)))+
@@ -443,7 +451,7 @@ function periodDetail(a){
 
 function fcRender(){
   if(!FC) return;
-  var h=FC.h, d=FC.d, P=periods();
+  var h=FC.h, d=FC.d, P=periods(selD);
   if(selP>=P.length) selP=0;
   if(selD>=d.time.length) selD=0;
   var drop='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+IC.drop+'</svg>';
@@ -476,7 +484,7 @@ function fcRender(){
   }
 
   fcHtml='<section class="card full fc"><h2>Vorhersage%CHIP%</h2>'+
-    '<div class="ptabs" role="tablist" aria-label="Tagesabschnitte">'+ptabs+'</div>'+
+    '<div class="ptabs" role="tablist" aria-label="Tagesabschnitte" style="--np:'+Math.max(P.length,1)+'">'+ptabs+'</div>'+
     (P.length?periodDetail(P[selP]):'')+
     '<div class="dtabs" role="tablist" aria-label="Tage">'+dtabs+'</div>'+
     '<div class="ddet">'+dayDetail(selD)+'</div>'+
@@ -507,7 +515,7 @@ function loadForecast(){
 $("outlook").addEventListener("click",function(e){
   var b=e.target.closest?e.target.closest("[data-p],[data-d]"):null;
   if(!b||!FC) return;
-  if(b.hasAttribute("data-p")) selP=+b.getAttribute("data-p"); else selD=+b.getAttribute("data-d");
+  if(b.hasAttribute("data-p")) selP=+b.getAttribute("data-p"); else { selD=+b.getAttribute("data-d"); selP=0; }
   fcRender();
 });
 
