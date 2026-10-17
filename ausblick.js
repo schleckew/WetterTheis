@@ -52,11 +52,12 @@ function renderOutlook(){
   if(!$("ol-main")){
     root.innerHTML='<div class="ol">'+
       '<section class="card full"><h2>Radar und Wolken</h2><div class="rmode" role="group" aria-label="Kartenansicht"><button type="button" data-m="radar" class="on">Regenradar</button><button type="button" data-m="sat">Wolken (Satellit)</button><select id="rsat" hidden aria-label="Satellitenbild wählen"></select></div><div id="ol-radar" aria-label="Wetterkarte"></div><div class="rctl" id="rctl" hidden><button id="rplay" type="button" aria-label="Animation starten oder anhalten">⏸</button><input id="rslide" type="range" min="0" max="0" value="0" aria-label="Zeitpunkt wählen"><span id="rtime" class="tn"></span></div><div class="olnote" id="rinfo">Niederschlagsradar des Deutschen Wetterdienstes, letzte Stunde · Karte: OpenStreetMap</div></section>'+
-      '<div id="ol-main" class="full" style="display:contents"></div><div id="ol-sun" style="display:contents"></div></div>';
+      '<div id="ol-main" class="full" style="display:contents"></div><div id="ol-long" style="display:contents"></div><div id="ol-sun" style="display:contents"></div></div>';
     initRadar();
   }
   $("ol-main").innerHTML=(fcHtml?fcHtml.replace("%CHIP%",chip):"");
   $("ol-sun").innerHTML=sunHtml;
+  renderLong();
 }
 /* ---------- Regenradar und Wolken (DWD-WMS auf Leaflet, animiert) ---------- */
 var WMS_URL="https://maps.dwd.de/geoserver/dwd/wms";
@@ -767,6 +768,91 @@ function loadArchive(){
   });
 }
 loadArchive(); setInterval(loadArchive,10*60*1000);
+
+/* ---------- 14-Tage-Übersicht (Open-Meteo, nur Tageswerte) ---------- */
+var LONGCSS=`
+.lc .lcw{margin:6px 0 4px}
+.lc svg.lg14{display:block;width:100%;height:auto}
+.lc .wk14{fill:var(--a-card2)}
+.lc .dl{font-size:12.5px;font-weight:500;fill:var(--a-ink2);text-anchor:middle}
+.lc .dl.we{font-weight:800;fill:var(--a-ink)}
+.lc .dl.td{fill:var(--a-wind);font-weight:800}
+.lc .crv{fill:none;stroke:var(--a-mute);stroke-width:1.6;opacity:.45}
+.lc .mx{fill:#d33a2c}
+.lc .mi{fill:#3b2fe0}
+.lc .vm{font-size:13px;text-anchor:middle;font-weight:500}
+.lc .dr{fill:#a9cdf2;stroke:#3c6aa8;stroke-width:1}
+.lc .llg{display:flex;flex-wrap:wrap;align-items:center;gap:8px 18px;font-size:13px;color:var(--a-ink2);margin-top:8px}
+.lc .llg span{display:inline-flex;align-items:center;gap:6px}
+.lc .llg i.dt2{width:10px;height:10px;border-radius:50%;display:inline-block}
+.lc .llg i.dt2.mi{background:#3b2fe0}
+.lc .llg i.dt2.mx{background:#d33a2c}
+.lc .llg .gr{display:inline-flex;justify-content:space-between;gap:18px;padding:2px 8px;border-radius:4px;background:linear-gradient(90deg,#f2de3a,var(--a-track));font-size:12px;color:var(--a-ink)}
+.lc .llg svg{width:18px;height:18px}
+@media (prefers-color-scheme:dark){.lc .mx{fill:#ff7a6b}.lc .mi{fill:#9a92ff}.lc .llg i.dt2.mi{background:#9a92ff}.lc .llg i.dt2.mx{background:#ff7a6b}.lc .dr{fill:#4d78b0;stroke:#a9cdf2}}
+`;
+var st4=document.createElement("style");st4.textContent=LONGCSS;document.head.appendChild(st4);
+var LONG=null, LONGERR=false;
+var DOW2=["So","Mo","Di","Mi","Do","Fr","Sa"];
+function smoothPath(pts){
+  if(pts.length<2) return "";
+  var d="M"+pts[0][0].toFixed(1)+" "+pts[0][1].toFixed(1);
+  for(var i=0;i<pts.length-1;i++){
+    var p0=pts[i-1]||pts[i], p1=pts[i], p2=pts[i+1], p3=pts[i+2]||p2;
+    var c1x=p1[0]+(p2[0]-p0[0])/6, c1y=p1[1]+(p2[1]-p0[1])/6, c2x=p2[0]-(p3[0]-p1[0])/6, c2y=p2[1]-(p3[1]-p1[1])/6;
+    d+=" C"+c1x.toFixed(1)+" "+c1y.toFixed(1)+" "+c2x.toFixed(1)+" "+c2y.toFixed(1)+" "+p2[0].toFixed(1)+" "+p2[1].toFixed(1);
+  }
+  return d;
+}
+function dropPath(cx,cy){return '<path class="dr" transform="translate('+cx.toFixed(1)+' '+cy.toFixed(1)+')" d="M0 -9c3 4 5.5 7 5.5 10a5.5 5.5 0 0 1-11 0c0-3 2.5-6 5.5-10z"/>'}
+
+function renderLong(){
+  var box=$("ol-long"); if(!box) return;
+  if(!LONG){
+    box.innerHTML=LONGERR?'<section class="card full lc"><h2>14-Tage-Wetter</h2><div class="olnote">Die 14-Tage-Übersicht ist gerade nicht verfügbar.</div></section>':'';
+    return;
+  }
+  var d=LONG, n=d.time.length;
+  var W=Math.max(300,Math.floor(($("outlook").clientWidth||360)-36)), cw=W/n;
+  var topLab=18, c0=56, c1=176, sunY=206, sunH=42, H=sunY+sunH+2;
+  var hi=Math.max.apply(null,d.temperature_2m_max), lo=Math.min.apply(null,d.temperature_2m_min), span=(hi-lo)||1;
+  function Y(v){return c0+(hi-v)/span*(c1-c0)}
+  var today=berlin(Math.floor(Date.now()/1000)).date;
+  var svgH='<svg class="lg14" viewBox="0 0 '+W+' '+H+'" role="img" aria-label="Temperaturverlauf und Sonne für 14 Tage">';
+  var maxP=[], minP=[], bands="", labels="", cells="", dots="", vals="", hits="";
+  for(var i=0;i<n;i++){
+    var dt=new Date(d.time[i]+"T12:00:00"), dow=dt.getDay(), we=(dow===0||dow===6), cx=(i+0.5)*cw;
+    if(we) bands+='<rect class="wk14" x="'+(i*cw).toFixed(1)+'" y="0" width="'+cw.toFixed(1)+'" height="'+(sunY-4)+'"/>';
+    labels+='<text class="dl'+(we?' we':'')+(d.time[i]===today?' td':'')+'" x="'+cx.toFixed(1)+'" y="'+topLab+'">'+DOW2[dow]+'</text>';
+    var tx=d.temperature_2m_max[i], tn=d.temperature_2m_min[i];
+    maxP.push([cx,Y(tx)]); minP.push([cx,Y(tn)]);
+    dots+='<circle class="mx" cx="'+cx.toFixed(1)+'" cy="'+Y(tx).toFixed(1)+'" r="4"/><circle class="mi" cx="'+cx.toFixed(1)+'" cy="'+Y(tn).toFixed(1)+'" r="4"/>';
+    vals+='<text class="vm mx" x="'+cx.toFixed(1)+'" y="'+(Y(tx)-9).toFixed(1)+'">'+r(tx)+'</text><text class="vm mi" x="'+cx.toFixed(1)+'" y="'+(Y(tn)+19).toFixed(1)+'">'+r(tn)+'</text>';
+    var sf=(d.daylight_duration&&d.daylight_duration[i])?Math.max(0,Math.min(1,d.sunshine_duration[i]/d.daylight_duration[i])):0;
+    cells+='<rect x="'+(i*cw+1).toFixed(1)+'" y="'+sunY+'" width="'+(cw-2).toFixed(1)+'" height="'+sunH+'" rx="2" style="fill:color-mix(in srgb,#f2de3a '+Math.round(sf*100)+'%,var(--a-track))"/>';
+    var pr=d.precipitation_sum[i]||0;
+    if(pr>=5){ cells+=dropPath(cx-4.5,sunY+sunH/2+5)+dropPath(cx+4.5,sunY+sunH/2+1); }
+    else if(pr>=0.3){ cells+=dropPath(cx,sunY+sunH/2+4); }
+    var tip=DAYN[dow]+" "+d.time[i].slice(8,10)+"."+d.time[i].slice(5,7)+".: "+r(tx)+"° / "+r(tn)+"°, Sonne "+num1((d.sunshine_duration[i]||0)/3600)+" h, Niederschlag "+num1(pr)+" mm";
+    hits+='<rect x="'+(i*cw).toFixed(1)+'" y="0" width="'+cw.toFixed(1)+'" height="'+H+'" fill="transparent"><title>'+esc(tip)+'</title></rect>';
+  }
+  svgH+=bands+labels+'<path class="crv" d="'+smoothPath(maxP)+'"/><path class="crv" d="'+smoothPath(minP)+'"/>'+dots+vals+cells+hits+'</svg>';
+  box.innerHTML='<section class="card full lc"><h2>14-Tage-Wetter</h2><div class="lcw">'+svgH+'</div>'+
+    '<div class="llg"><span><i class="dt2 mi"></i>Min (°C)</span><span><i class="dt2 mx"></i>Max (°C)</span>'+
+    '<span>'+svg("sun",18)+'<span class="gr"><b style="font-weight:600">viel</b><b style="font-weight:600">wenig</b></span></span>'+
+    '<span>'+dropPathLegend()+'Regen</span></div></section>';
+}
+function dropPathLegend(){return '<svg viewBox="-8 -11 16 22" style="width:12px;height:16px"><path class="dr" d="M0 -9c3 4 5.5 7 5.5 10a5.5 5.5 0 0 1-11 0c0-3 2.5-6 5.5-10z"/></svg>'}
+function loadLong(){
+  fetch("https://api.open-meteo.com/v1/forecast?latitude="+LAT+"&longitude="+LON+
+    "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,sunshine_duration,daylight_duration"+
+    "&timezone="+encodeURIComponent(TZ)+"&forecast_days=14")
+   .then(function(x){if(!x.ok)throw new Error(x.status);return x.json()})
+   .then(function(j){LONG=j.daily;LONGERR=false;renderLong()})
+   .catch(function(){ if(!LONG){LONGERR=true;renderLong();} });
+}
+loadLong(); setInterval(loadLong,30*60*1000);
+(function(){var tm=null;window.addEventListener("resize",function(){clearTimeout(tm);tm=setTimeout(renderLong,200)})})();
 
 /* ---------- Warnungen (DWD über Brightsky) ---------- */
 var SEV={minor:"Wetterwarnung",moderate:"Markante Wetterwarnung",severe:"Unwetterwarnung",extreme:"Extreme Unwetterwarnung"};
