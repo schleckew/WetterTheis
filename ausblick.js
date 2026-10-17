@@ -50,8 +50,9 @@ function renderOutlook(){
   var chip= warnOk===true ? '<span class="chipok">Keine DWD-Warnungen</span>' : '';
   var root=$("outlook");
   if(!$("ol-main")){
-    root.innerHTML='<div class="ol"><div id="ol-main" class="full" style="display:contents"></div>'+
-      '<section class="card full"><h2>Radar und Wolken</h2><div class="rmode" role="group" aria-label="Kartenansicht"><button type="button" data-m="radar" class="on">Regenradar</button><button type="button" data-m="sat">Wolken (Satellit)</button><select id="rsat" hidden aria-label="Satellitenbild wählen"></select></div><div id="ol-radar" aria-label="Wetterkarte"></div><div class="rctl" id="rctl" hidden><button id="rplay" type="button" aria-label="Animation starten oder anhalten">⏸</button><input id="rslide" type="range" min="0" max="0" value="0" aria-label="Zeitpunkt wählen"><span id="rtime" class="tn"></span></div><div class="olnote" id="rinfo">Niederschlagsradar des Deutschen Wetterdienstes, letzte Stunde · Karte: OpenStreetMap</div></section><div id="ol-sun" style="display:contents"></div></div>';
+    root.innerHTML='<div class="ol">'+
+      '<section class="card full"><h2>Radar und Wolken</h2><div class="rmode" role="group" aria-label="Kartenansicht"><button type="button" data-m="radar" class="on">Regenradar</button><button type="button" data-m="sat">Wolken (Satellit)</button><select id="rsat" hidden aria-label="Satellitenbild wählen"></select></div><div id="ol-radar" aria-label="Wetterkarte"></div><div class="rctl" id="rctl" hidden><button id="rplay" type="button" aria-label="Animation starten oder anhalten">⏸</button><input id="rslide" type="range" min="0" max="0" value="0" aria-label="Zeitpunkt wählen"><span id="rtime" class="tn"></span></div><div class="olnote" id="rinfo">Niederschlagsradar des Deutschen Wetterdienstes, letzte Stunde · Karte: OpenStreetMap</div></section>'+
+      '<div id="ol-main" class="full" style="display:contents"></div><div id="ol-sun" style="display:contents"></div></div>';
     initRadar();
   }
   $("ol-main").innerHTML=(fcHtml?fcHtml.replace("%CHIP%",chip):"");
@@ -548,7 +549,7 @@ function windRose(dir,sz,v){
 }
 /* ---------- Oben: Wetterkachel (aktuell + 3 Tage) und Stundenleiste (24 h Messwerte + 3 Tage Vorhersage) ---------- */
 var ARCH="https://wetter-archiv.eweiter.workers.dev";
-var ARC=null, COL=46, PAST=24, AHEAD=72, topLo=null, lastArc=0;
+var LGOPEN=false, ARC=null, COL=46, PAST=24, AHEAD=72, topLo=null, lastArc=0;
 var TOPCSS=`
 .wn{flex:none}
 .wn path{stroke:var(--a-card);stroke-width:.8;stroke-linejoin:round}
@@ -616,6 +617,9 @@ var TOPCSS=`
 .tp .m2{color:var(--a-ext)}
 .tp .hw{display:flex;flex-direction:column;align-items:center;gap:1px;min-height:36px;font-size:11px;font-weight:600;color:var(--a-ink2);margin-top:4px}
 .tp .lg b{font-weight:700}
+.tp details.lgd{margin-top:6px}
+.tp details.lgd summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--a-ink2);padding:4px 0}
+.tp details.lgd summary:focus-visible{outline:3px solid var(--a-sun);outline-offset:2px}
 `;
 var st3=document.createElement("style");st3.textContent=TOPCSS;document.head.appendChild(st3);
 if(!$("hourly")){var hc0=document.createElement("div");hc0.id="hourly";var wn0=$("warn");wn0.parentNode.insertBefore(hc0,wn0);}
@@ -719,13 +723,16 @@ function renderTop(){
       '<div class="hm '+(past?'m1':'m2')+'">'+mm+'</div>'+wind+'</div>';
   }).join("")+'</div>';
 
+  var hint=lo<0?'← Messwerte der Station (24 Stunden) · Vorhersage (3 Tage) →':'Vorhersage für 3 Tage →';
   var note=lo<0?'Nach links wischen: Messwerte der Station (bis zu 24 Stunden). Nach rechts: stündliche Vorhersage für 3 Tage.':
     'Nach rechts wischen: stündliche Vorhersage für 3 Tage. Die Messwerte der Station sind gerade nicht verfügbar.';
   root.innerHTML='<div class="ol">'+heroHtml()+
     '<section class="card full tp"><h2>Verlauf und Vorhersage</h2>'+
     '<div class="tl"><div class="in" style="width:'+W+'px">'+dayrow+strip+'</div></div>'+
+    '<div class="olnote">'+hint+'</div>'+
+    '<details class="lgd"'+(LGOPEN?' open':'')+'><summary>Legende</summary>'+
     '<div class="olnote lg">Regenmenge je Stunde: <b class="m1">gemessen</b> · <b class="m2">vorhergesagt</b>. Windpfeil: zeigt, wohin der Wind weht; Farbe von schwarz (schwach) bis rot (stark); Zahl in km/h.</div>'+
-    '<div class="olnote">'+note+'</div></section></div>';
+    '<div class="olnote">'+note+'</div></details></section></div>';
 
   var sc=document.querySelector("#hourly .tl");
   if(sc){
@@ -734,6 +741,7 @@ function renderTop(){
   }
   topLo=lo;
 }
+$("hourly").addEventListener("toggle",function(e){ if(e.target.classList&&e.target.classList.contains("lgd")) LGOPEN=e.target.open; },true);
 $("hourly").addEventListener("click",function(e){
   var b=e.target.closest?e.target.closest("[data-hd]"):null; if(!b||!FC) return;
   selD=+b.getAttribute("data-hd"); selP=0; fcRender();
