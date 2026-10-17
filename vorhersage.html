@@ -148,7 +148,7 @@ footer a{color:inherit}
     </div>
   </div>
 
-  <div class="card widget"><iframe src="https://widget.awekas.at/widget4.php?id=24938&amp;lng=de&amp;uni=c&amp;wuni=km&amp;rad=7&amp;bg=5099d41f&amp;co=#000000ff&amp;bo=#b9b9b9ff" width="300" height="205" scrolling="no" marginheight="0" marginwidth="0" frameborder="0" title="AWEKAS Wetterwidget" name="AWEKAS Wetterwidget"></iframe></div>
+  <div id="hourly"></div>
 
   <div id="warn"></div>
   <div id="outlook"></div>
@@ -157,6 +157,14 @@ footer a{color:inherit}
     <span>Vorhersage: <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a> · Warnungen und Radar: <a href="https://www.dwd.de/" target="_blank" rel="noopener">Deutscher Wetterdienst</a> (Warnungen über <a href="https://brightsky.dev/" target="_blank" rel="noopener">Brightsky</a>)</span>
   </footer>
 </div>
-<script src="ausblick.js?v=5" defer onerror="var d=document.createElement('div');d.style.cssText='margin:12px;padding:10px 14px;border:1px solid #c23a3a;border-radius:10px;font:14px system-ui,sans-serif;color:#c23a3a;background:#fff';d.textContent='Vorhersage: ausblick.js konnte nicht geladen werden. Liegt die Datei im selben Ordner wie diese Seite?';document.body.appendChild(d)"></script>
+<script>
+/* ausblick.js wird alle 10 Minuten neu angefordert, damit Handys keine alte Fassung aus dem Zwischenspeicher zeigen */
+(function(){
+  var s=document.createElement("script");
+  s.src="ausblick.js?t="+Math.floor(Date.now()/600000);
+  s.onerror=function(){var d=document.createElement("div");d.style.cssText="margin:12px;padding:10px 14px;border:1px solid #c23a3a;border-radius:10px;font:14px system-ui,sans-serif;color:#c23a3a;background:#fff";d.textContent="Vorhersage: ausblick.js konnte nicht geladen werden. Liegt die Datei im selben Ordner wie diese Seite?";document.body.appendChild(d)};
+  document.body.appendChild(s);
+})();
+</script>
 </body>
 </html>
