@@ -71,7 +71,11 @@ body{margin:0;min-height:100%;background:var(--bg);color:var(--ink);font-family:
 .hero .cond{font-size:15px;font-weight:600;opacity:.92;margin-bottom:2px}
 .hero .temp{font-family:var(--disp);font-weight:800;font-size:clamp(72px,18vw,112px);line-height:.95;letter-spacing:-.03em}
 .hero .temp small{font-size:.38em;font-weight:700;opacity:.8;margin-left:3px;letter-spacing:0}
-.hero .feel{font-size:15px;opacity:.92;margin-top:8px}
+.hero .feel{grid-column:1/-1;justify-self:start;display:inline-flex;align-items:center;gap:12px;margin-top:2px;padding:9px 16px 9px 12px;border-radius:18px;background:rgba(255,255,255,.2);font-size:21px;font-weight:700;line-height:1.15}
+.hero .feel svg{flex:none;width:34px;height:34px}
+.hero .feel small{display:block;font-size:13.5px;font-weight:500;opacity:.92;margin-top:2px}
+.hero .feel.cold svg{color:#c9e6ff}
+.hero .feel.warm svg{color:#ffd9b8}
 .hero .side{text-align:right;font-size:14px;line-height:1.7;opacity:.95}
 .hero .side b{font-family:var(--disp);font-size:20px;font-weight:700}
 .range{grid-column:1/-1;margin-top:14px}
@@ -261,7 +265,11 @@ function render(json, live, note){
   if(note){ b.textContent=note; b.classList.add("show"); } else b.classList.remove("show");
 
   var t=c.temperature, wc=ok(c.windchill)?c.windchill:windchill(t,c.windspeed||0);
-  var feel = Math.abs(wc-t)>=.3 ? 'Gefühlt '+f(wc,1)+' °C' : 'Gefühlt wie gemessen';
+  var dwc = wc-t, diff = Math.abs(dwc)>=.3, fcls = !diff ? 'same' : (dwc<0 ? 'cold' : 'warm');
+  var fArrow = !diff ? '<path d="M17.5 10h4.5M17.5 14h4.5"/>' : (dwc<0 ? '<path d="M19.5 8v8M16.5 13l3 3 3-3"/>' : '<path d="M19.5 16V8M16.5 11l3-3 3 3"/>');
+  var fIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14.2V5.5a2.5 2.5 0 0 1 5 0v8.7a4.2 4.2 0 1 1-5 0z"/><circle cx="11.5" cy="17.2" r="1.6" fill="currentColor" stroke="none"/><path d="M11.5 9v6.5"/>'+fArrow+'</svg>';
+  var feel = diff ? 'Gefühlt '+f(wc,1)+' °C' : 'Gefühlt wie gemessen';
+  var feelSub = diff ? f(Math.abs(dwc),1)+' K '+(dwc<0?'kälter':'wärmer')+' als gemessen' : '';
   var wb=wetbulb(c), cool=ok(wb)&&ok(t)?Math.max(0,t-wb):null;
   var cond = COND[c.condition] || "";
   var pos = (ok(d.temp_min)&&ok(d.temp_max)&&d.temp_max>d.temp_min) ? clamp((t-d.temp_min)/(d.temp_max-d.temp_min),0,1)*100 : 50;
@@ -273,8 +281,9 @@ function render(json, live, note){
   html+='<section class="hero" aria-label="Temperatur">'+
     '<div>'+(cond?'<div class="cond">'+cond+'</div>':'')+
     '<div class="temp tn">'+f(t,1)+'<small>°C</small></div>'+
-    '<div class="feel">'+feel+'</div></div>'+
+    '</div>'+
     '<div class="side tn">Taupunkt<br><b>'+f(c.dewpoint,1)+' °C</b><br>Feuchtkugel<br><b>'+f(wb,1)+' °C</b><br>Luftfeuchte<br><b>'+f(c.humidity,0)+' %</b></div>'+
+    '<div class="feel '+fcls+'">'+fIcon+'<div>'+feel+(feelSub?'<small>'+feelSub+'</small>':'')+'</div></div>'+
     (ok(d.temp_min)&&ok(d.temp_max)?
       '<div class="range"><div class="rb"><i style="left:'+pos+'%"></i></div>'+
       '<div class="rl tn"><span>Tief '+f(d.temp_min,1)+' °C · '+hhmm(d.temp_min_ts,off)+'</span><span>Hoch '+f(d.temp_max,1)+' °C · '+hhmm(d.temp_max_ts,off)+'</span></div></div>':'')+
