@@ -52,7 +52,7 @@ function renderOutlook(){
   if(!$("ol-main")){
     root.innerHTML='<div class="ol">'+
       '<section class="card full"><h2>Radar und Wolken</h2><div class="rmode" role="group" aria-label="Kartenansicht"><button type="button" data-m="radar" class="on">Regenradar</button><button type="button" data-m="sat">Wolken (Satellit)</button><select id="rsat" hidden aria-label="Satellitenbild wählen"></select></div><div id="ol-radar" aria-label="Wetterkarte"></div><div class="rctl" id="rctl" hidden><button id="rplay" type="button" aria-label="Animation starten oder anhalten">⏸</button><input id="rslide" type="range" min="0" max="0" value="0" aria-label="Zeitpunkt wählen"><span id="rtime" class="tn"></span></div><div class="olnote" id="rinfo">Niederschlagsradar des Deutschen Wetterdienstes, letzte Stunde · Karte: OpenStreetMap</div></section>'+
-      '<div id="ol-main" class="full" style="display:contents"></div><div id="ol-long" style="display:contents"></div><div id="ol-sun" style="display:contents"></div></div>';
+      '<div id="ol-day" style="display:contents"></div><div id="ol-main" class="full" style="display:contents"></div><div id="ol-long" style="display:contents"></div><div id="ol-sun" style="display:contents"></div></div>';
     initRadar();
   }
   $("ol-main").innerHTML=(fcHtml?fcHtml.replace("%CHIP%",chip):"");
@@ -509,6 +509,7 @@ function fcRender(){
   var sc=document.querySelector("#outlook .dtabs"), left=sc?sc.scrollLeft:0;
   renderOutlook();
   sc=document.querySelector("#outlook .dtabs"); if(sc) sc.scrollLeft=left;
+  renderDayStrip();
 }
 
 function buildForecast(j){
@@ -704,6 +705,19 @@ function heroHtml(){
     '<div class="wkh">Oberes Drittel einer Kachel: stündlicher Verlauf ab 6 Uhr · Rest der Kachel: Tagesvorhersage</div></section>';
 }
 
+function stripHtml(slots){
+  return '<div class="strip">'+slots.map(function(o){
+    var past=o.s<0, w=past?null:wmo(o.code,o.day);
+    var mm=(o.mm!=null&&o.mm>=0.05)?fmtL(o.mm)+' L/qm':'';
+    var wind=o.ws!=null?'<div class="hw">'+(o.dir!=null?windRose(o.dir,20,o.ws):'')+'<span>'+r(o.ws)+'</span></div>':'<div class="hw"></div>';
+    return '<div class="hc'+(past?' past':'')+(o.s===0?' now':'')+'"><div class="hh">'+(o.s===0?'Jetzt':o.hr+' Uhr')+'</div>'+
+      '<div class="hi"'+(w?' title="'+esc(w[1])+'"':'')+'>'+(w?w[0]:'')+'</div>'+
+      '<div class="ht tn"'+(o.t!=null?' style="color:'+tcol(o.t)+'"':'')+'>'+(o.t!=null?r(o.t)+'°':'–')+'</div>'+
+      '<div class="hp">'+(past?'':(o.pop>=10?o.pop+' %':''))+'</div>'+
+      '<div class="hm '+(past?'m1':'m2')+'">'+mm+'</div>'+wind+'</div>';
+  }).join("")+'</div>';
+}
+
 function renderTop(){
   var root=$("hourly"); if(!root||!FC) return;
   var S=buildSlots(), slots=S.slots, lo=S.lo, W=slots.length*COL;
@@ -718,16 +732,7 @@ function renderTop(){
   });
   dayrow+='</div>';
 
-  var strip='<div class="strip">'+slots.map(function(o){
-    var past=o.s<0, w=past?null:wmo(o.code,o.day);
-    var mm=(o.mm!=null&&o.mm>=0.05)?fmtL(o.mm)+' L/qm':'';
-    var wind=o.ws!=null?'<div class="hw">'+(o.dir!=null?windRose(o.dir,20,o.ws):'')+'<span>'+r(o.ws)+'</span></div>':'<div class="hw"></div>';
-    return '<div class="hc'+(past?' past':'')+(o.s===0?' now':'')+'"><div class="hh">'+(o.s===0?'Jetzt':o.hr+' Uhr')+'</div>'+
-      '<div class="hi"'+(w?' title="'+esc(w[1])+'"':'')+'>'+(w?w[0]:'')+'</div>'+
-      '<div class="ht tn"'+(o.t!=null?' style="color:'+tcol(o.t)+'"':'')+'>'+(o.t!=null?r(o.t)+'°':'–')+'</div>'+
-      '<div class="hp">'+(past?'':(o.pop>=10?o.pop+' %':''))+'</div>'+
-      '<div class="hm '+(past?'m1':'m2')+'">'+mm+'</div>'+wind+'</div>';
-  }).join("")+'</div>';
+  var strip=stripHtml(slots);
 
   var hint=lo<0?'← Messwerte der Station (24 Stunden) · Vorhersage (3 Tage) →':'Vorhersage für 3 Tage →';
   var note=lo<0?'Nach links wischen: Messwerte der Station (bis zu 24 Stunden). Nach rechts: stündliche Vorhersage für 3 Tage.':
@@ -766,7 +771,7 @@ $("hourly").addEventListener("click",function(e){
   // oberes Drittel (nur bei Maus/Touch): Stundenverlauf einstellen; sonst (auch per Tastatur): zur Tagesvorhersage springen
   if(e.detail>0 && (e.clientY-rect.top)<rect.height/3){ stripTo(k); return; }
   selD=k; selP=0; fcRender();
-  var f=document.querySelector("#outlook .fc"); if(f&&f.scrollIntoView) f.scrollIntoView({behavior:"smooth",block:"start"});
+  var f=document.querySelector("#ol-day .tp")||document.querySelector("#outlook .fc"); if(f&&f.scrollIntoView) f.scrollIntoView({behavior:"smooth",block:"start"});
 });
 
 function fromSeries(rows){
@@ -873,6 +878,35 @@ function loadLong(){
 }
 loadLong(); setInterval(loadLong,30*60*1000);
 (function(){var tm=null;window.addEventListener("resize",function(){clearTimeout(tm);tm=setTimeout(renderLong,200)})})();
+
+
+/* ---------- Stundenvorhersage für den gewählten Tag (zwischen Radar und 7-Tage-Vorhersage) ---------- */
+var dsDate=null;
+function renderDayStrip(){
+  var box=$("ol-day"); if(!box||!FC) return;
+  var h=FC.h, d=FC.d, k=selD, date=d.time[k], ix=idxFor(date,0,24);
+  if(k===0) ix=ix.filter(function(i){return i>=FC.i0});
+  if(!ix.length){ box.innerHTML=""; return; }
+  var sc0=document.querySelector("#ol-day .tl"), keep=(sc0&&dsDate===date)?sc0.scrollLeft:null;
+  var slots=ix.map(function(i){
+    return {s:i-FC.i0,date:date,hr:+h.time[i].slice(11,13),t:h.temperature_2m[i],mm:h.precipitation[i],ws:h.wind_speed_10m[i],dir:h.wind_direction_10m[i],pop:h.precipitation_probability[i],code:h.weather_code[i],day:h.is_day[i]};
+  });
+  var dow=new Date(date+"T12:00:00").getDay(), nm=k===0?"heute":k===1?"morgen":DAYN[dow];
+  var title=nm+" "+date.slice(8,10)+"."+date.slice(5,7)+".";
+  box.innerHTML='<section class="card full tp"><h2>Stundenvorhersage · '+esc(title)+'</h2>'+
+    '<div class="tl"><div class="in" style="width:'+(slots.length*COL)+'px">'+stripHtml(slots)+'</div></div>'+
+    '<div class="olnote">Für den oben gewählten Tag (Tageskachel oder Reiter). Regenmenge in L/qm, Windpfeil wie im Verlauf oben.</div></section>';
+  var sc=document.querySelector("#ol-day .tl");
+  if(sc){
+    if(keep!==null) sc.scrollLeft=keep;
+    else{
+      var x=0;
+      if(k>0){ for(var q=0;q<slots.length;q++){ if(slots[q].hr===6){ x=q*COL+6; break; } } }
+      sc.scrollLeft=x;
+    }
+  }
+  dsDate=date;
+}
 
 /* ---------- Warnungen (DWD über Brightsky) ---------- */
 var SEV={minor:"Wetterwarnung",moderate:"Markante Wetterwarnung",severe:"Unwetterwarnung",extreme:"Extreme Unwetterwarnung"};
