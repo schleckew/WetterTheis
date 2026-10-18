@@ -51,7 +51,7 @@ function renderOutlook(){
   var root=$("outlook");
   if(!$("ol-main")){
     root.innerHTML='<div class="ol">'+
-      '<section class="card full"><h2>Radar und Wolken</h2><div class="rmode" role="group" aria-label="Kartenansicht"><button type="button" data-m="radar" class="on">Regenradar</button><button type="button" data-m="sat">Wolken (Satellit)</button><select id="rsat" hidden aria-label="Satellitenbild wählen"></select></div><div id="ol-radar" aria-label="Wetterkarte"></div><div class="rctl" id="rctl" hidden><button id="rplay" type="button" aria-label="Animation starten oder anhalten">⏸</button><input id="rslide" type="range" min="0" max="0" value="0" aria-label="Zeitpunkt wählen"><span id="rtime" class="tn"></span></div><div class="olnote" id="rinfo">Niederschlagsradar des Deutschen Wetterdienstes, letzte Stunde · Karte: OpenStreetMap</div></section>'+
+      '<section class="card full"><h2>Radar und Wolken</h2><div class="rmode" role="group" aria-label="Kartenansicht"><button type="button" data-m="radar" class="on">Regenradar</button><button type="button" data-m="sat">Wolken (Satellit)</button><button type="button" data-m="prog">Prognose</button><select id="rsat" hidden aria-label="Satellitenbild wählen"></select></div><div id="ol-radar" aria-label="Wetterkarte"></div><div class="rctl" id="rctl" hidden><button id="rplay" type="button" aria-label="Animation starten oder anhalten">⏸</button><input id="rslide" type="range" min="0" max="0" value="0" aria-label="Zeitpunkt wählen"><span id="rtime" class="tn"></span></div><div class="rdays" id="rdays" hidden><button type="button" data-dj="0">Heute</button><button type="button" data-dj="1">Morgen</button><button type="button" data-dj="2">Übermorgen</button></div><div class="rleg" id="rleg" hidden></div><div class="olnote" id="rinfo">Niederschlagsradar des Deutschen Wetterdienstes, letzte Stunde · Karte: OpenStreetMap</div></section>'+
       '<div id="ol-day" style="display:contents"></div><div id="ol-main" class="full" style="display:contents"></div><div id="ol-long" style="display:contents"></div><div id="ol-sun" style="display:contents"></div></div>';
     initRadar();
   }
@@ -64,7 +64,7 @@ var WMS_URL="https://maps.dwd.de/geoserver/dwd/wms";
 var CAPS_RADAR="https://maps.dwd.de/geoserver/dwd/Niederschlagsradar/wms?service=WMS&version=1.3.0&request=GetCapabilities";
 var CAPS_ALL=WMS_URL+"?service=WMS&version=1.3.0&request=GetCapabilities";
 var rMode="radar", rLayerName="dwd:Niederschlagsradar", rOpacity=0.75, satPick=null;
-var radarMap=null, rLayers=[], rTimes=[], rIdx=0, rTimer=null, rPlaying=false, rStatic=null, rReq=0;
+var rMeta=[], rNowIdx=0, rFcName=null, rFcTry=0, progAt=0, radarMap=null, rLayers=[], rTimes=[], rIdx=0, rTimer=null, rPlaying=false, rStatic=null, rReq=0;
 var REDUCED=window.matchMedia&&window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 function parseTimes(txt,n){
@@ -85,6 +85,64 @@ function fetchRadarTimes(){
     var dims=doc.getElementsByTagName("Dimension");
     for(var i=0;i<dims.length;i++){ if((dims[i].getAttribute("name")||"").toLowerCase()==="time") return parseTimes(dims[i].textContent,12); }
     return [];
+  });
+}
+
+var R_PAST_MIN=90, R_FUT_MIN=150;
+var FC_LAYERS=["dwd:Radar_rv_product_1x1km_ger","dwd:Radar_wn-product_1x1km_ger"];
+// Alle Zeitpunkte einer WMS-Zeitangabe (Liste oder Start/Ende/Schritt) innerhalb eines Zeitfensters
+function parseWindow(txt,fromMs,toMs){
+  var out={}, toks=txt.trim().split(/\s*,\s*/);
+  toks.forEach(function(tk){
+    if(tk.indexOf("/")>0){
+      var p=tk.split("/"), a=new Date(p[0]).getTime(), b=new Date(p[1]).getTime();
+      var m=/PT(?:(\d+)H)?(?:(\d+)M)?/.exec(p[2]||"PT5M")||[], step=(((+m[1]||0)*60)+(+m[2]||0))*60000||300000;
+      if(isNaN(a)||isNaN(b)) return;
+      var t=a; if(fromMs>a) t=a+Math.ceil((fromMs-a)/step)*step;
+      for(var n=0;t<=b&&t<=toMs&&n<600;t+=step,n++) out[t]=1;
+    } else { var d=new Date(tk).getTime(); if(!isNaN(d)&&d>=fromMs&&d<=toMs) out[d]=1; }
+  });
+  return Object.keys(out).map(Number).sort(function(x,y){return x-y}).map(function(t){return new Date(t)});
+}
+function layerTimeDim(name){
+  return getXml(layerCapsUrl(name)).then(function(doc){
+    var dims=doc.getElementsByTagName("Dimension");
+    for(var i=0;i<dims.length;i++){ if((dims[i].getAttribute("name")||"").toLowerCase()==="time") return dims[i].textContent; }
+    return null;
+  });
+}
+// Radarvorhersage-Ebene des DWD suchen (mehrere mögliche Namen; Ergebnis wird gemerkt)
+function findFc(){
+  if(rFcName) return Promise.resolve(rFcName);
+  if(rFcName===false&&Date.now()-rFcTry<30*60000) return Promise.resolve(null);
+  var cached=null; try{ cached=localStorage.getItem("rfc_layer"); }catch(e){}
+  var cand=cached?[cached].concat(FC_LAYERS.filter(function(x){return x!==cached})):FC_LAYERS.slice(), i=0;
+  function next(){
+    if(i>=cand.length){ rFcName=false; rFcTry=Date.now(); return Promise.resolve(null); }
+    var nm=cand[i++], now=Date.now();
+    return layerTimeDim(nm).then(function(dim){
+      if(dim&&parseWindow(dim,now+10*60000,now+R_FUT_MIN*60000).length){ rFcName=nm; try{ localStorage.setItem("rfc_layer",nm); }catch(e){} return nm; }
+      return next();
+    }).catch(next);
+  }
+  return next();
+}
+function fetchRadarFrames(){
+  var now=Date.now(), from=now-R_PAST_MIN*60000-120000;
+  return Promise.all([
+    layerTimeDim("dwd:Niederschlagsradar").catch(function(){ return null; }),
+    findFc().then(function(nm){ return nm?layerTimeDim(nm).then(function(d){ return {name:nm,dim:d}; }).catch(function(){ return null; }):null; }).catch(function(){ return null; })
+  ]).then(function(res){
+    var obsT=res[0]?parseWindow(res[0],from,now+120000):[];
+    var fc=res[1], fcT=(fc&&fc.dim)?parseWindow(fc.dim,from,now+R_FUT_MIN*60000):[];
+    var latestObs=obsT.length?obsT[obsT.length-1].getTime():now-10*60000, frames=[];
+    if(fc&&fcT.length&&fcT[0].getTime()<=now-60*60000){      // Vorhersage-Ebene enthält auch die Vergangenheit
+      fcT.forEach(function(d){ frames.push({t:d,layer:fc.name,fc:d.getTime()>latestObs+120000}); });
+    } else {
+      obsT.forEach(function(d){ frames.push({t:d,layer:"dwd:Niederschlagsradar",fc:false}); });
+      if(fc) fcT.forEach(function(d){ if(d.getTime()>latestObs+120000) frames.push({t:d,layer:fc.name,fc:true}); });
+    }
+    return frames;
   });
 }
 // Satellitenebenen automatisch im DWD-Angebot suchen (Namen werden nicht fest vorgegeben)
@@ -146,7 +204,17 @@ function rShow(i){
   rIdx=i;
   rLayers.forEach(function(l,k){ l.setOpacity(k===i?rOpacity:0); });
   var sl=$("rslide"); if(sl) sl.value=i;
-  var tl=$("rtime"); if(tl&&rTimes[i]) tl.textContent=rTimes[i].toLocaleTimeString("de-DE",{hour:"2-digit",minute:"2-digit",timeZone:TZ})+" Uhr";
+  var tl=$("rtime"); if(tl&&rTimes[i]){ tl.textContent=rLabel(i); tl.className="tn"+(rMeta[i]&&rMeta[i].fc?" fc":""); }
+  if(rMode==="prog") markDay(i);
+}
+function rLabel(i){
+  var d=rTimes[i]; if(!d) return "";
+  if(rMode==="prog") return d.toLocaleString("de-DE",{weekday:"short",day:"2-digit",month:"2-digit",hour:"2-digit",timeZone:TZ}).replace(",","");
+  var hm=d.toLocaleTimeString("de-DE",{hour:"2-digit",minute:"2-digit",timeZone:TZ})+" Uhr";
+  if(rMode==="sat"||!rMeta.length) return hm;
+  var dm=Math.round((d.getTime()-Date.now())/300000)*5, m=rMeta[i];
+  var rel=i===rNowIdx?"aktuell":(m&&m.fc?"in "+Math.max(5,dm)+" Min · Vorhersage":"vor "+Math.max(5,-dm)+" Min");
+  return hm+"\n"+rel;
 }
 function rStop(){ rPlaying=false; clearTimeout(rTimer); var b=$("rplay"); if(b) b.textContent="▶"; }
 function rPlay(){
@@ -155,7 +223,7 @@ function rPlay(){
     if(!rPlaying) return;
     var next=(rIdx+1)%rLayers.length;
     rShow(next);
-    rTimer=setTimeout(step,next===rLayers.length-1?1800:450);
+    rTimer=setTimeout(step,next===rLayers.length-1?1800:(rMeta.length&&next===rNowIdx?1300:(rMode==="prog"?380:450)));
   })();
 }
 function wmsOpts(extra){
@@ -166,27 +234,46 @@ function clearLayers(){
   rLayers.forEach(function(l){ radarMap.removeLayer(l); }); rLayers=[];
   if(rStatic){ radarMap.removeLayer(rStatic); rStatic=null; }
 }
-function buildFrames(times){
-  var was=rPlaying; rStop(); clearLayers();
+function buildFrames(times,meta){
+  var was=rPlaying; rStop(); clearLayers(); rMeta=meta||[];
   if(times.length<2){   // keine Zeitreihe verfügbar: aktuelles Bild
     rStatic=L.tileLayer.wms(WMS_URL,wmsOpts({})).addTo(radarMap);
     $("rctl").hidden=true; return;
   }
   rTimes=times;
-  times.forEach(function(d){ rLayers.push(L.tileLayer.wms(WMS_URL,wmsOpts({time:d.toISOString(),opacity:0})).addTo(radarMap)); });
+  times.forEach(function(d,i){ var ex={time:d.toISOString(),opacity:0}; if(rMeta[i]&&rMeta[i].layer) ex.layers=rMeta[i].layer; rLayers.push(L.tileLayer.wms(WMS_URL,wmsOpts(ex)).addTo(radarMap)); });
   $("rslide").max=times.length-1; $("rctl").hidden=false;
-  rShow(times.length-1);
+  rNowIdx=times.length-1; if(rMeta.length){ for(var q=rMeta.length-1;q>=0;q--){ if(!rMeta[q].fc){ rNowIdx=q; break; } } }
+  rShow(rNowIdx);
   if(was||(!REDUCED&&!radarMap._userStopped)) rPlay();
+}
+function radarFcText(){
+  var last=-1; rMeta.forEach(function(m,i){ if(m.fc) last=i; });
+  if(last<0) return "";
+  var min=Math.round((rTimes[last].getTime()-Date.now())/60000/30)*30;
+  return " und Radarvorhersage für die nächsten "+String(min/60).replace(".",",")+" Stunden";
 }
 function info(){
   var e=$("rinfo"); if(!e) return;
   e.textContent= rMode==="sat"
     ? "Satellitenbild"+(satPick?" ("+satPick.title+")":"")+" des Deutschen Wetterdienstes, aktualisiert sich alle paar Minuten · Karte: OpenStreetMap"
-    : "Niederschlagsradar des Deutschen Wetterdienstes, letzte Stunde, aktualisiert sich alle 5 Minuten · Karte: OpenStreetMap";
+    : rMode==="prog"
+    ? "Modellprognose für den Niederschlag (Open-Meteo, Raster ca. 10 km, Stundenwerte in L/qm je Stunde). Zeigt Regengebiete grob, keine einzelnen Schauer · Karte: OpenStreetMap"
+    : "Niederschlagsradar des Deutschen Wetterdienstes: letzte 1,5 Stunden"+radarFcText()+", aktualisiert sich alle 5 Minuten · Karte: OpenStreetMap";
 }
 function refreshRadar(){
+  if(rMode==="prog"){
+    if(rLayers.length&&Date.now()-progAt<3*3600*1000) return;   // Prognose wird nur selten neu gebaut
+    var pm=++rReq;
+    loadProg().then(function(P){ if(pm===rReq){ buildProg(P); info(); } }).catch(function(){
+      if(pm!==rReq) return;
+      clearLayers(); rStop(); $("rctl").hidden=true; $("rdays").hidden=true; $("rleg").hidden=true;
+      var e=$("rinfo"); if(e) e.textContent="Die Modellprognose ist gerade nicht verfügbar. Bitte später erneut versuchen oder auf „Regenradar“ wechseln.";
+    });
+    return;
+  }
   var my=++rReq, sat=rMode==="sat";
-  (sat?fetchSatTimes():fetchRadarTimes()).then(function(t){ if(my===rReq){ buildFrames(t); info(); } })
+  (sat?fetchSatTimes():fetchRadarFrames().then(function(fr){ return {times:fr.map(function(f){return f.t}),meta:fr}; })).then(function(t){ if(my===rReq){ if(sat) buildFrames(t); else buildFrames(t.times,t.meta); info(); } })
   .catch(function(){
     if(my!==rReq) return;
     if(sat){ clearLayers(); rStop(); $("rctl").hidden=true; var e=$("rinfo"); if(e) e.textContent="Das Satellitenbild ist gerade nicht verfügbar. Bitte später erneut versuchen oder auf „Regenradar“ wechseln."; }
@@ -197,11 +284,12 @@ function setMode(m){
   if(m===rMode) return;
   rMode=m; rStop(); clearLayers(); $("rctl").hidden=true;
   rLayerName= m==="sat" ? (satPick?satPick.name:"") : "dwd:Niederschlagsradar";
-  rOpacity= m==="sat" ? 0.9 : 0.75;
+  rOpacity= m==="sat" ? 0.9 : (m==="prog" ? 0.85 : 0.75);
+  rMeta=[]; $("rdays").hidden=(m!=="prog"); $("rleg").hidden=(m!=="prog");
   var bs=document.querySelectorAll(".rmode button"); for(var i=0;i<bs.length;i++) bs[i].className= bs[i].getAttribute("data-m")===m?"on":"";
   var e=$("rinfo"); if(e) e.textContent="Lädt …";
   var sel=$("rsat"); if(sel) sel.hidden=true;
-  radarMap._userStopped=false;
+  radarMap._userStopped=(m==="prog");
   refreshRadar();
 }
 function initRadar(){
@@ -907,6 +995,112 @@ function renderDayStrip(){
   }
   dsDate=date;
 }
+
+
+/* ---------- Modellprognose für den Niederschlag auf der Karte (Open-Meteo-Raster, stündlich, 3 Tage) ---------- */
+var PGCSS=`
+.rdays{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
+.rdays button{padding:6px 12px;border-radius:999px;border:1px solid var(--a-line);background:var(--a-card2);color:var(--a-ink);font:600 13px var(--a-body);cursor:pointer}
+.rdays button.on{background:var(--a-wind);border-color:transparent;color:#fff}
+.rleg{margin-top:8px}
+.rdays[hidden],.rleg[hidden]{display:none}
+.rleg .bar9{display:flex;height:12px;border-radius:6px;overflow:hidden;border:1px solid var(--a-line)}
+.rleg .bar9 i{flex:1}
+.rleg .lab9{display:flex;justify-content:space-between;font-size:11.5px;color:var(--a-ink2);margin-top:3px}
+#rtime{white-space:pre-line;min-width:112px!important;text-align:right;font-size:12.5px;line-height:1.25}
+#rtime.fc{color:var(--a-ext);font-weight:700}
+`;
+var st5=document.createElement("style");st5.textContent=PGCSS;document.head.appendChild(st5);
+
+var PG={n:15,dLat:0.64,dLon:0.96};
+var PSTOPS=[[0.05,[180,220,255,0]],[0.1,[180,220,255,120]],[0.5,[100,176,255,170]],[1,[45,125,217,190]],[2,[31,182,106,200]],[4,[242,211,56,210]],[8,[240,138,36,220]],[15,[216,51,43,230]]];
+function mmColor(v){
+  if(v<PSTOPS[0][0]) return [0,0,0,0];
+  var L=PSTOPS[PSTOPS.length-1];
+  if(v>=L[0]) return L[1];
+  for(var i=1;i<PSTOPS.length;i++){
+    if(v<=PSTOPS[i][0]){
+      var a=PSTOPS[i-1],b=PSTOPS[i],k=(v-a[0])/(b[0]-a[0]);
+      return [0,1,2,3].map(function(j){return Math.round(a[1][j]+(b[1][j]-a[1][j])*k)});
+    }
+  }
+  return [0,0,0,0];
+}
+function loadProg(){
+  try{
+    var c=JSON.parse(localStorage.getItem("prog_grid_v1")||"null");
+    if(c&&c.d&&c.lat===LAT&&c.lon===LON&&c.n===PG.n&&Date.now()-c.at<2.5*3600*1000){ progAt=c.at; return Promise.resolve(c.d); }
+  }catch(e){}
+  var lats=[],lons=[];
+  for(var r=0;r<PG.n;r++) for(var c2=0;c2<PG.n;c2++){
+    lats.push((LAT-PG.dLat+2*PG.dLat*r/(PG.n-1)).toFixed(3));
+    lons.push((LON-PG.dLon+2*PG.dLon*c2/(PG.n-1)).toFixed(3));
+  }
+  var u="https://api.open-meteo.com/v1/forecast?latitude="+lats.join(",")+"&longitude="+lons.join(",")+
+    "&hourly=precipitation&timezone="+encodeURIComponent(TZ)+"&forecast_days=3";
+  return fetch(u).then(function(x){ if(!x.ok) throw new Error(x.status); return x.json(); }).then(function(j){
+    if(!Array.isArray(j)) j=[j];
+    if(j.length!==PG.n*PG.n) throw new Error("unvollständig");
+    var d={times:j[0].hourly.time,grid:j.map(function(o){ return o.hourly.precipitation.map(function(v){ return v==null?0:Math.round(v*10)/10; }); })};
+    progAt=Date.now();
+    try{ localStorage.setItem("prog_grid_v1",JSON.stringify({at:progAt,lat:LAT,lon:LON,n:PG.n,d:d})); }catch(e){}
+    return d;
+  });
+}
+function berlinEpoch(str){   // "2026-10-19T14:00" (Berliner Ortszeit) -> Unix-Sekunden
+  var y=+str.slice(0,4), mo=+str.slice(5,7), d=+str.slice(8,10), h=+str.slice(11,13), base=Date.UTC(y,mo-1,d,h)/1000;
+  var ep=base-7200, b=berlin(ep); if(b.date===str.slice(0,10)&&b.hr===h) return ep;
+  return base-3600;
+}
+function progImage(vals){
+  var n=PG.n, W=96, H=96, cv=document.createElement("canvas"); cv.width=W; cv.height=H;
+  var ctx=cv.getContext("2d"), im=ctx.createImageData(W,H);
+  for(var y=0;y<H;y++){
+    var gy=(1-y/(H-1))*(n-1), r0=Math.min(n-2,Math.floor(gy)), fy=gy-r0;
+    for(var x=0;x<W;x++){
+      var gx=x/(W-1)*(n-1), c0=Math.min(n-2,Math.floor(gx)), fx=gx-c0;
+      var a=vals[r0*n+c0], b=vals[r0*n+c0+1], c=vals[(r0+1)*n+c0], d=vals[(r0+1)*n+c0+1];
+      var v=(a*(1-fx)+b*fx)*(1-fy)+(c*(1-fx)+d*fx)*fy, col=mmColor(v), o=(y*W+x)*4;
+      im.data[o]=col[0]; im.data[o+1]=col[1]; im.data[o+2]=col[2]; im.data[o+3]=col[3];
+    }
+  }
+  ctx.putImageData(im,0,0);
+  return cv.toDataURL("image/png");
+}
+function buildProg(P){
+  rStop(); clearLayers(); rMeta=[]; rTimes=[];
+  var nowH=Math.floor(Date.now()/3600000)*3600, bounds=[[LAT-PG.dLat,LON-PG.dLon],[LAT+PG.dLat,LON+PG.dLon]];
+  P.times.forEach(function(ts,h){
+    var ep=berlinEpoch(ts); if(ep<nowH) return;
+    var vals=P.grid.map(function(g){ return g[h]||0; });
+    var ov=L.imageOverlay(progImage(vals),bounds,{opacity:0,interactive:false,attribution:"Prognose: Open-Meteo"}).addTo(radarMap);
+    rLayers.push(ov); rTimes.push(new Date(ep*1000));
+  });
+  if(rLayers.length<2){ throw new Error("zu wenige Stunden"); }
+  $("rslide").max=rLayers.length-1; $("rctl").hidden=false; $("rdays").hidden=false;
+  var lg=$("rleg"); lg.hidden=false;
+  lg.innerHTML='<div class="bar9">'+[0.1,0.5,1,2,4,8,15].map(function(v){ var c=mmColor(v); return '<i style="background:rgba('+c[0]+','+c[1]+','+c[2]+','+Math.max(c[3]/255,0.45)+')"></i>'; }).join("")+'</div>'+
+    '<div class="lab9"><span>0,1</span><span>0,5</span><span>1</span><span>2</span><span>4</span><span>8</span><span>15 L/qm je Stunde</span></div>';
+  rShow(progIndexFor(1));
+}
+function progIndexFor(dj){   // Position des Tages dj (0 heute, 1 morgen, 2 übermorgen) um 6 Uhr
+  if(dj===0) return 0;
+  var today=berlin(Math.floor(Date.now()/1000)).date, want=addDay(today,dj);
+  for(var i=0;i<rTimes.length;i++){ var b=berlin(Math.floor(rTimes[i].getTime()/1000)); if(b.date===want&&b.hr===6) return i; }
+  return Math.min(rTimes.length-1,Math.max(0,dj*24-(new Date().getHours())));
+}
+function markDay(i){
+  if(!rTimes[i]) return;
+  var today=berlin(Math.floor(Date.now()/1000)).date, d=berlin(Math.floor(rTimes[i].getTime()/1000)).date;
+  var dj=Math.round((Date.parse(d+"T12:00:00Z")-Date.parse(today+"T12:00:00Z"))/864e5);
+  var bs=document.querySelectorAll("#rdays button");
+  for(var k=0;k<bs.length;k++) bs[k].className=(+bs[k].getAttribute("data-dj")===dj)?"on":"";
+}
+$("outlook").addEventListener("click",function(e){
+  var b=e.target.closest?e.target.closest("[data-dj]"):null; if(!b||rMode!=="prog"||!rLayers.length) return;
+  rStop(); if(radarMap) radarMap._userStopped=true;
+  rShow(progIndexFor(+b.getAttribute("data-dj")));
+});
 
 /* ---------- Warnungen (DWD über Brightsky) ---------- */
 var SEV={minor:"Wetterwarnung",moderate:"Markante Wetterwarnung",severe:"Unwetterwarnung",extreme:"Extreme Unwetterwarnung"};
