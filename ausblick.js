@@ -60,11 +60,12 @@ function renderOutlook(){
   renderLong();
 }
 /* ---------- Regenradar und Wolken (DWD-WMS auf Leaflet, animiert) ---------- */
+(function(){ ["preconnect","dns-prefetch"].forEach(function(r){ var l=document.createElement("link"); l.rel=r; l.href="https://maps.dwd.de"; if(r==="preconnect") l.crossOrigin=""; document.head.appendChild(l); }); })();
 var WMS_URL="https://maps.dwd.de/geoserver/dwd/wms";
 var CAPS_RADAR="https://maps.dwd.de/geoserver/dwd/Niederschlagsradar/wms?service=WMS&version=1.3.0&request=GetCapabilities";
 var CAPS_ALL=WMS_URL+"?service=WMS&version=1.3.0&request=GetCapabilities";
 var rMode="radar", rLayerName="dwd:Niederschlagsradar", rOpacity=0.75, satPick=null;
-var rMeta=[], rNowIdx=0, rFcName=null, rFcTry=0, progAt=0, radarMap=null, rLayers=[], rTimes=[], rIdx=0, rTimer=null, rPlaying=false, rStatic=null, rReq=0;
+var rKeys=[], rGen=0, rProgTxt="", rLoadedAll=false, rMeta=[], rNowIdx=0, rFcName=null, rFcTry=0, progAt=0, radarMap=null, rLayers=[], rTimes=[], rIdx=0, rTimer=null, rPlaying=false, rStatic=null, rReq=0;
 var REDUCED=window.matchMedia&&window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 function parseTimes(txt,n){
@@ -166,17 +167,44 @@ function fillSel(){
 }
 function layerCapsUrl(name){ return "https://maps.dwd.de/geoserver/dwd/"+name.replace(/^dwd:/,"")+"/wms?service=WMS&version=1.3.0&request=GetCapabilities"; }
 // Die große Gesamtliste wird nur selten geladen und einen Tag lang im Browser gemerkt.
-function loadSatList(){
-  try{
-    var c=JSON.parse(localStorage.getItem("sat_list")||"null");
-    if(c&&c.list&&c.list.length&&Date.now()-c.at<24*3600*1000) return Promise.resolve(c.list);
-  }catch(e){}
+// Bekannte Ebenennamen zuerst einzeln prüfen (kleine Anfrage) - die riesige Gesamtliste des DWD wird nur im Notfall
+// und danach höchstens einmal pro Woche im Hintergrund geladen.
+var SAT_CANDS=["dwd:Satellite_meteosat_1km_euat_rgb_day_hrv_and_ir108_3h"];
+function probeSat(){
+  return Promise.all(SAT_CANDS.map(function(nm){
+    return layerTimeDim(nm).then(function(dim){
+      return dim?{name:nm,title:nm.replace(/^dwd:Satellite_?/i,"").replace(/_/g," "),score:9,dim:dim,at:Date.now()}:null;
+    }).catch(function(){ return null; });
+  })).then(function(a){ return a.filter(Boolean); });
+}
+function saveSat(list,partial){
+  var now=Date.now();
+  try{ localStorage.setItem("sat_list",JSON.stringify({at:now,partial:!!partial,list:list.map(function(x){ return {name:x.name,title:x.title,score:x.score}; })})); }catch(e){}
+}
+function fullSatList(){
   return getXml(CAPS_ALL).then(function(doc){
     var l=listSat(doc); if(!l.length) throw new Error("keine Satellitenebene");
     var now=Date.now(); l.forEach(function(x){ x.at=now; });
-    try{ localStorage.setItem("sat_list",JSON.stringify({at:now,list:l.map(function(x){ return {name:x.name,title:x.title,score:x.score}; })})); }catch(e){}
-    return l;
+    saveSat(l,false); return l;
   });
+}
+function loadSatList(){
+  try{
+    var c=JSON.parse(localStorage.getItem("sat_list")||"null");
+    if(c&&c.list&&c.list.length&&Date.now()-c.at<30*24*3600*1000) return Promise.resolve(c.list);
+  }catch(e){}
+  return probeSat().then(function(list){
+    if(list.length){ saveSat(list,true); return list; }
+    return fullSatList();
+  });
+}
+var satEnriched=false;
+function enrichSat(){   // im Hintergrund: weitere Satellitenebenen für die Auswahlliste suchen (höchstens einmal pro Woche)
+  if(satEnriched) return; satEnriched=true;
+  var c=null, at=0; try{ c=JSON.parse(localStorage.getItem("sat_list")||"null"); at=+localStorage.getItem("sat_enrich_at")||0; }catch(e){}
+  if(!c||!c.partial||Date.now()-at<7*24*3600*1000) return;
+  try{ localStorage.setItem("sat_enrich_at",String(Date.now())); }catch(e){}
+  fullSatList().then(function(l){ satList=l; fillSel(); }).catch(function(){});
 }
 function satTimesFor(p){
   if(p.dim&&Date.now()-(p.at||0)<4*60*1000) return Promise.resolve(parseTimes(p.dim,12));
@@ -202,7 +230,8 @@ function fetchSatTimes(){
 }
 function rShow(i){
   rIdx=i;
-  rLayers.forEach(function(l,k){ l.setOpacity(k===i?rOpacity:0); });
+  if(rMode!=="prog"&&radarMap&&!rLayers[i]&&rTimes[i]) makeLayer(i,false);
+  rLayers.forEach(function(l,k){ if(l) l.setOpacity(k===i?rOpacity:0); });
   var sl=$("rslide"); if(sl) sl.value=i;
   var tl=$("rtime"); if(tl&&rTimes[i]){ tl.textContent=rLabel(i); tl.className="tn"+(rMeta[i]&&rMeta[i].fc?" fc":""); }
   if(rMode==="prog") markDay(i);
@@ -227,25 +256,71 @@ function rPlay(){
   })();
 }
 function wmsOpts(extra){
-  var o={layers:rLayerName,format:"image/png",transparent:true,version:"1.3.0",opacity:rOpacity,interpolations:rMode==="sat"?"bilinear":"nearest neighbor",attribution:rMode==="sat"?"Satellit: DWD/EUMETSAT":"Radar: DWD"};
+  var o={layers:rLayerName,format:"image/png",transparent:true,version:"1.3.0",opacity:rOpacity,tileSize:512,keepBuffer:1,updateWhenIdle:true,updateWhenZooming:false,interpolations:rMode==="sat"?"bilinear":"nearest neighbor",attribution:rMode==="sat"?"Satellit: DWD/EUMETSAT":"Radar: DWD"};
   for(var k in extra) o[k]=extra[k]; return o;
 }
 function clearLayers(){
-  rLayers.forEach(function(l){ radarMap.removeLayer(l); }); rLayers=[];
+  rGen++; rProgTxt=""; rLayers.forEach(function(l){ if(l) radarMap.removeLayer(l); }); rLayers=[]; rKeys=[];
   if(rStatic){ radarMap.removeLayer(rStatic); rStatic=null; }
 }
+function makeLayer(i,visible){
+  if(rLayers[i]) return rLayers[i];
+  var ex={time:rTimes[i].toISOString(),opacity:visible?rOpacity:0};
+  if(rMeta[i]&&rMeta[i].layer) ex.layers=rMeta[i].layer;
+  rLayers[i]=L.tileLayer.wms(WMS_URL,wmsOpts(ex)).addTo(radarMap);
+  return rLayers[i];
+}
+function allLoaded(gen){
+  if(gen!==rGen) return;
+  rLoadedAll=true; rProgTxt=""; info();
+  if((!REDUCED&&radarMap&&!radarMap._userStopped&&!rPlaying)||rWasPlaying) rPlay();
+  rWasPlaying=false;
+  if(rMode==="sat") setTimeout(enrichSat,1500);
+}
+var rWasPlaying=false;
+// Bilder nacheinander (höchstens 2 gleichzeitig) laden, die dem aktuellen Bild nächsten zuerst
+function loadRest(order,gen){
+  var pos=0, active=0, loaded=0, total=order.length;
+  if(!total){ allLoaded(gen); return; }
+  function fin(){
+    if(gen!==rGen) return;
+    loaded++; rProgTxt=" · lädt weitere Bilder "+loaded+"/"+total+" …"; info();
+    if(loaded>=total) allLoaded(gen); else pump();
+  }
+  function startOne(i){
+    var l=makeLayer(i,false), done=false;
+    active++;
+    var f=function(){ if(done) return; done=true; active--; fin(); };
+    l.once("load",f); setTimeout(f,9000);
+  }
+  function pump(){
+    while(active<2&&pos<order.length&&gen===rGen) startOne(order[pos++]);
+  }
+  pump();
+}
 function buildFrames(times,meta){
-  var was=rPlaying; rStop(); clearLayers(); rMeta=meta||[];
+  rWasPlaying=rPlaying; rStop(); rMeta=meta||[];
+  var oldL={}; rLayers.forEach(function(l,i){ if(l&&rKeys[i]) oldL[rKeys[i]]=l; });
+  if(rStatic){ radarMap.removeLayer(rStatic); rStatic=null; }
   if(times.length<2){   // keine Zeitreihe verfügbar: aktuelles Bild
+    Object.keys(oldL).forEach(function(k){ radarMap.removeLayer(oldL[k]); }); rLayers=[]; rKeys=[]; rGen++;
     rStatic=L.tileLayer.wms(WMS_URL,wmsOpts({})).addTo(radarMap);
     $("rctl").hidden=true; return;
   }
-  rTimes=times;
-  times.forEach(function(d,i){ var ex={time:d.toISOString(),opacity:0}; if(rMeta[i]&&rMeta[i].layer) ex.layers=rMeta[i].layer; rLayers.push(L.tileLayer.wms(WMS_URL,wmsOpts(ex)).addTo(radarMap)); });
+  rTimes=times; var gen=++rGen; rLoadedAll=false;
+  rKeys=times.map(function(d,i){ return ((rMeta[i]&&rMeta[i].layer)||rLayerName)+"|"+d.getTime(); });
+  rLayers=new Array(times.length);
+  rKeys.forEach(function(k,i){ if(oldL[k]){ rLayers[i]=oldL[k]; delete oldL[k]; } });   // schon geladene Bilder behalten
+  Object.keys(oldL).forEach(function(k){ radarMap.removeLayer(oldL[k]); });
   $("rslide").max=times.length-1; $("rctl").hidden=false;
   rNowIdx=times.length-1; if(rMeta.length){ for(var q=rMeta.length-1;q>=0;q--){ if(!rMeta[q].fc){ rNowIdx=q; break; } } }
-  rShow(rNowIdx);
-  if(was||(!REDUCED&&!radarMap._userStopped)) rPlay();
+  makeLayer(rNowIdx,true); rShow(rNowIdx);          // zuerst nur das aktuelle Bild
+  var order=[]; for(var z=0;z<times.length;z++){ if(z!==rNowIdx&&!rLayers[z]) order.push(z); }
+  order.sort(function(a,b){ return Math.abs(a-rNowIdx)-Math.abs(b-rNowIdx); });
+  var cur=rLayers[rNowIdx];
+  var go=function(){ loadRest(order,gen); };
+  var first=false, start=function(){ if(first) return; first=true; go(); };
+  cur.once("load",start); setTimeout(start,6000);
 }
 function radarFcText(){
   var last=-1; rMeta.forEach(function(m,i){ if(m.fc) last=i; });
@@ -255,11 +330,12 @@ function radarFcText(){
 }
 function info(){
   var e=$("rinfo"); if(!e) return;
-  e.textContent= rMode==="sat"
+  var t= rMode==="sat"
     ? "Satellitenbild"+(satPick?" ("+satPick.title+")":"")+" des Deutschen Wetterdienstes, aktualisiert sich alle paar Minuten · Karte: OpenStreetMap"
     : rMode==="prog"
     ? "Modellprognose für den Niederschlag (Open-Meteo, Raster ca. 10 km, Stundenwerte in L/qm je Stunde). Zeigt Regengebiete grob, keine einzelnen Schauer · Karte: OpenStreetMap"
     : "Niederschlagsradar des Deutschen Wetterdienstes: letzte 1,5 Stunden"+radarFcText()+", aktualisiert sich alle 5 Minuten · Karte: OpenStreetMap";
+  e.textContent=t+(rMode==="prog"?"":rProgTxt);
 }
 function refreshRadar(){
   if(rMode==="prog"){
