@@ -51,7 +51,7 @@ function renderOutlook(){
   var root=$("outlook");
   if(!$("ol-main")){
     root.innerHTML='<div class="ol">'+
-      '<section class="card full"><h2>Radar und Wolken</h2><div class="rmode" role="group" aria-label="Kartenansicht"><button type="button" data-m="radar" class="on">Regenradar</button><button type="button" data-m="sat">Wolken (Satellit)</button><button type="button" data-m="prog">Prognose</button><select id="rsat" hidden aria-label="Satellitenbild wählen"></select></div><div id="ol-radar" aria-label="Wetterkarte"></div><div class="rctl" id="rctl" hidden><button id="rplay" type="button" aria-label="Animation starten oder anhalten">⏸</button><input id="rslide" type="range" min="0" max="0" value="0" aria-label="Zeitpunkt wählen"><span id="rtime" class="tn"></span></div><div class="rdays" id="rdays" hidden><button type="button" data-dj="0">Heute</button><button type="button" data-dj="1">Morgen</button><button type="button" data-dj="2">Übermorgen</button></div><div class="rleg" id="rleg" hidden></div><div class="olnote" id="rinfo">Niederschlagsradar des Deutschen Wetterdienstes, letzte Stunde · Karte: OpenStreetMap</div></section>'+
+      '<section class="card full"><h2>Radar und Wolken</h2><div class="rmode" role="group" aria-label="Kartenansicht"><button type="button" data-m="radar" class="on">Regenradar</button><button type="button" data-m="sat">Wolken (Satellit)</button><button type="button" data-m="prog">Prognose</button><select id="rsat" hidden aria-label="Satellitenbild wählen"></select></div><div class="rdays" id="rkind" hidden style="margin:0 0 10px"><button type="button" data-pk="rain">Regen</button><button type="button" data-pk="cloud">Wolken</button></div><div id="ol-radar" aria-label="Wetterkarte"></div><div class="rctl" id="rctl" hidden><button id="rplay" type="button" aria-label="Animation starten oder anhalten">⏸</button><input id="rslide" type="range" min="0" max="0" value="0" aria-label="Zeitpunkt wählen"><span id="rtime" class="tn"></span></div><div class="rdays" id="rdays" hidden><button type="button" data-dj="0">Heute</button><button type="button" data-dj="1">Morgen</button><button type="button" data-dj="2">Übermorgen</button></div><div class="rleg" id="rleg" hidden></div><div class="olnote" id="rinfo">Niederschlagsradar des Deutschen Wetterdienstes, letzte Stunde · Karte: OpenStreetMap</div></section>'+
       '<div id="ol-day" style="display:contents"></div><div id="ol-main" class="full" style="display:contents"></div><div id="ol-long" style="display:contents"></div><div id="ol-sun" style="display:contents"></div></div>';
     initRadar();
   }
@@ -333,7 +333,9 @@ function info(){
   var t= rMode==="sat"
     ? "Satellitenbild"+(satPick?" ("+satPick.title+")":"")+" des Deutschen Wetterdienstes, aktualisiert sich alle paar Minuten · Karte: OpenStreetMap"
     : rMode==="prog"
-    ? "Modellprognose für den Niederschlag (Open-Meteo, Raster ca. 10 km, Stundenwerte in L/qm je Stunde). Zeigt Regengebiete grob, keine einzelnen Schauer · Karte: OpenStreetMap"
+    ? (progKind==="cloud"
+        ? "Modellprognose für die Bewölkung (Open-Meteo, Raster ca. 10 km, stündlich). Zeigt große Wolkenfelder, kein Satellitenbild · Karte: OpenStreetMap"
+        : "Modellprognose für den Niederschlag (Open-Meteo, Raster ca. 10 km, Stundenwerte in L/qm je Stunde). Zeigt Regengebiete grob, keine einzelnen Schauer · Karte: OpenStreetMap")
     : "Niederschlagsradar des Deutschen Wetterdienstes: letzte 1,5 Stunden"+radarFcText()+", aktualisiert sich alle 5 Minuten · Karte: OpenStreetMap";
   e.textContent=t+(rMode==="prog"?"":rProgTxt);
 }
@@ -343,7 +345,7 @@ function refreshRadar(){
     var pm=++rReq;
     loadProg().then(function(P){ if(pm===rReq){ buildProg(P); info(); } }).catch(function(){
       if(pm!==rReq) return;
-      clearLayers(); rStop(); $("rctl").hidden=true; $("rdays").hidden=true; $("rleg").hidden=true;
+      clearLayers(); rStop(); $("rctl").hidden=true; $("rdays").hidden=true; $("rleg").hidden=true; $("rkind").hidden=true;
       var e=$("rinfo"); if(e) e.textContent="Die Modellprognose ist gerade nicht verfügbar. Bitte später erneut versuchen oder auf „Regenradar“ wechseln.";
     });
     return;
@@ -361,7 +363,7 @@ function setMode(m){
   rMode=m; rStop(); clearLayers(); $("rctl").hidden=true;
   rLayerName= m==="sat" ? (satPick?satPick.name:"") : "dwd:Niederschlagsradar";
   rOpacity= m==="sat" ? 0.9 : (m==="prog" ? 0.85 : 0.75);
-  rMeta=[]; $("rdays").hidden=(m!=="prog"); $("rleg").hidden=(m!=="prog");
+  rMeta=[]; $("rdays").hidden=(m!=="prog"); $("rleg").hidden=(m!=="prog"); $("rkind").hidden=(m!=="prog");
   var bs=document.querySelectorAll(".rmode button"); for(var i=0;i<bs.length;i++) bs[i].className= bs[i].getAttribute("data-m")===m?"on":"";
   var e=$("rinfo"); if(e) e.textContent="Lädt …";
   var sel=$("rsat"); if(sel) sel.hidden=true;
@@ -1102,9 +1104,23 @@ function mmColor(v){
   }
   return [0,0,0,0];
 }
+var CSTOPS=[[10,[205,212,222,0]],[35,[196,205,217,90]],[65,[150,162,178,150]],[100,[86,98,118,210]]];
+function cloudColor(v){
+  if(v<=CSTOPS[0][0]) return [0,0,0,0];
+  var L=CSTOPS[CSTOPS.length-1]; if(v>=L[0]) return L[1];
+  for(var i=1;i<CSTOPS.length;i++){
+    if(v<=CSTOPS[i][0]){
+      var a=CSTOPS[i-1],b=CSTOPS[i],k=(v-a[0])/(b[0]-a[0]);
+      return [0,1,2,3].map(function(j){return Math.round(a[1][j]+(b[1][j]-a[1][j])*k)});
+    }
+  }
+  return [0,0,0,0];
+}
+var progKind="rain", progData=null;
+try{ if(localStorage.getItem("prog_kind")==="cloud") progKind="cloud"; }catch(e){}
 function loadProg(){
   try{
-    var c=JSON.parse(localStorage.getItem("prog_grid_v1")||"null");
+    var c=JSON.parse(localStorage.getItem("prog_grid_v2")||"null");
     if(c&&c.d&&c.lat===LAT&&c.lon===LON&&c.n===PG.n&&Date.now()-c.at<2.5*3600*1000){ progAt=c.at; return Promise.resolve(c.d); }
   }catch(e){}
   var lats=[],lons=[];
@@ -1113,13 +1129,13 @@ function loadProg(){
     lons.push((LON-PG.dLon+2*PG.dLon*c2/(PG.n-1)).toFixed(3));
   }
   var u="https://api.open-meteo.com/v1/forecast?latitude="+lats.join(",")+"&longitude="+lons.join(",")+
-    "&hourly=precipitation&timezone="+encodeURIComponent(TZ)+"&forecast_days=3";
+    "&hourly=precipitation,cloud_cover&timezone="+encodeURIComponent(TZ)+"&forecast_days=3";
   return fetch(u).then(function(x){ if(!x.ok) throw new Error(x.status); return x.json(); }).then(function(j){
     if(!Array.isArray(j)) j=[j];
     if(j.length!==PG.n*PG.n) throw new Error("unvollständig");
-    var d={times:j[0].hourly.time,grid:j.map(function(o){ return o.hourly.precipitation.map(function(v){ return v==null?0:Math.round(v*10)/10; }); })};
+    var d={times:j[0].hourly.time,grid:j.map(function(o){ return o.hourly.precipitation.map(function(v){ return v==null?0:Math.round(v*10)/10; }); }),cloud:j.map(function(o){ return (o.hourly.cloud_cover||[]).map(function(v){ return v==null?0:Math.round(v); }); })};
     progAt=Date.now();
-    try{ localStorage.setItem("prog_grid_v1",JSON.stringify({at:progAt,lat:LAT,lon:LON,n:PG.n,d:d})); }catch(e){}
+    try{ localStorage.setItem("prog_grid_v2",JSON.stringify({at:progAt,lat:LAT,lon:LON,n:PG.n,d:d})); }catch(e){}
     return d;
   });
 }
@@ -1128,7 +1144,7 @@ function berlinEpoch(str){   // "2026-10-19T14:00" (Berliner Ortszeit) -> Unix-S
   var ep=base-7200, b=berlin(ep); if(b.date===str.slice(0,10)&&b.hr===h) return ep;
   return base-3600;
 }
-function progImage(vals){
+function progImage(vals,colorFn){
   var n=PG.n, W=96, H=96, cv=document.createElement("canvas"); cv.width=W; cv.height=H;
   var ctx=cv.getContext("2d"), im=ctx.createImageData(W,H);
   for(var y=0;y<H;y++){
@@ -1136,28 +1152,46 @@ function progImage(vals){
     for(var x=0;x<W;x++){
       var gx=x/(W-1)*(n-1), c0=Math.min(n-2,Math.floor(gx)), fx=gx-c0;
       var a=vals[r0*n+c0], b=vals[r0*n+c0+1], c=vals[(r0+1)*n+c0], d=vals[(r0+1)*n+c0+1];
-      var v=(a*(1-fx)+b*fx)*(1-fy)+(c*(1-fx)+d*fx)*fy, col=mmColor(v), o=(y*W+x)*4;
+      var v=(a*(1-fx)+b*fx)*(1-fy)+(c*(1-fx)+d*fx)*fy, col=colorFn(v), o=(y*W+x)*4;
       im.data[o]=col[0]; im.data[o+1]=col[1]; im.data[o+2]=col[2]; im.data[o+3]=col[3];
     }
   }
   ctx.putImageData(im,0,0);
   return cv.toDataURL("image/png");
 }
-function buildProg(P){
+function progLegend(){
+  var lg=$("rleg"); lg.hidden=false;
+  if(progKind==="cloud"){
+    lg.innerHTML='<div class="bar9">'+[20,35,50,65,80,90,100].map(function(v){ var c=cloudColor(v); return '<i style="background:rgba('+c[0]+','+c[1]+','+c[2]+','+Math.max(c[3]/255,0.25)+')"></i>'; }).join("")+'</div>'+
+      '<div class="lab9"><span>klar</span><span>heiter</span><span>wolkig</span><span>bedeckt (100 % Wolken)</span></div>';
+  } else {
+    lg.innerHTML='<div class="bar9">'+[0.1,0.5,1,2,4,8,15].map(function(v){ var c=mmColor(v); return '<i style="background:rgba('+c[0]+','+c[1]+','+c[2]+','+Math.max(c[3]/255,0.45)+')"></i>'; }).join("")+'</div>'+
+      '<div class="lab9"><span>0,1</span><span>0,5</span><span>1</span><span>2</span><span>4</span><span>8</span><span>15 L/qm je Stunde</span></div>';
+  }
+  var bs=document.querySelectorAll("#rkind button");
+  for(var k=0;k<bs.length;k++) bs[k].className=(bs[k].getAttribute("data-pk")===progKind)?"on":"";
+}
+function buildProg(P,keepIdx){
+  progData=P;
   rStop(); clearLayers(); rMeta=[]; rTimes=[];
   var nowH=Math.floor(Date.now()/3600000)*3600, bounds=[[LAT-PG.dLat,LON-PG.dLon],[LAT+PG.dLat,LON+PG.dLon]];
+  var src=(progKind==="cloud"&&P.cloud&&P.cloud.length)?P.cloud:P.grid, fn=(src===P.cloud)?cloudColor:mmColor;
   P.times.forEach(function(ts,h){
     var ep=berlinEpoch(ts); if(ep<nowH) return;
-    var vals=P.grid.map(function(g){ return g[h]||0; });
-    var ov=L.imageOverlay(progImage(vals),bounds,{opacity:0,interactive:false,attribution:"Prognose: Open-Meteo"}).addTo(radarMap);
+    var vals=src.map(function(g){ return g[h]||0; });
+    var ov=L.imageOverlay(progImage(vals,fn),bounds,{opacity:0,interactive:false,attribution:"Prognose: Open-Meteo"}).addTo(radarMap);
     rLayers.push(ov); rTimes.push(new Date(ep*1000));
   });
   if(rLayers.length<2){ throw new Error("zu wenige Stunden"); }
-  $("rslide").max=rLayers.length-1; $("rctl").hidden=false; $("rdays").hidden=false;
-  var lg=$("rleg"); lg.hidden=false;
-  lg.innerHTML='<div class="bar9">'+[0.1,0.5,1,2,4,8,15].map(function(v){ var c=mmColor(v); return '<i style="background:rgba('+c[0]+','+c[1]+','+c[2]+','+Math.max(c[3]/255,0.45)+')"></i>'; }).join("")+'</div>'+
-    '<div class="lab9"><span>0,1</span><span>0,5</span><span>1</span><span>2</span><span>4</span><span>8</span><span>15 L/qm je Stunde</span></div>';
-  rShow(progIndexFor(1));
+  $("rslide").max=rLayers.length-1; $("rctl").hidden=false; $("rdays").hidden=false; $("rkind").hidden=false;
+  progLegend();
+  rShow(keepIdx!=null?Math.min(keepIdx,rLayers.length-1):progIndexFor(1));
+}
+function setProgKind(k){
+  if(k===progKind) return;
+  progKind=k; try{ localStorage.setItem("prog_kind",k); }catch(e){}
+  if(rMode!=="prog"||!progData) return;
+  var idx=rIdx; buildProg(progData,idx); info();
 }
 function progIndexFor(dj){   // Position des Tages dj (0 heute, 1 morgen, 2 übermorgen) um 6 Uhr
   if(dj===0) return 0;
@@ -1173,6 +1207,8 @@ function markDay(i){
   for(var k=0;k<bs.length;k++) bs[k].className=(+bs[k].getAttribute("data-dj")===dj)?"on":"";
 }
 $("outlook").addEventListener("click",function(e){
+  var pk=e.target.closest?e.target.closest("[data-pk]"):null;
+  if(pk){ setProgKind(pk.getAttribute("data-pk")); return; }
   var b=e.target.closest?e.target.closest("[data-dj]"):null; if(!b||rMode!=="prog"||!rLayers.length) return;
   rStop(); if(radarMap) radarMap._userStopped=true;
   rShow(progIndexFor(+b.getAttribute("data-dj")));
