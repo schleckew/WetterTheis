@@ -535,33 +535,107 @@ function agg(ix){
     fg:ix.length>0&&ix.filter(function(i){ return h.weather_code[i]===45||h.weather_code[i]===48; }).length>=Math.ceil(ix.length/2)
   };
 }
-// Wettersymbol aus Menge, Bewölkung und Wetterart (nicht nur aus dem Wettercode, der schon bei Spuren von Regen "Regen" meldet)
-function skyEmoji(cc,day){
-  if(day) return cc<15?"☀️":cc<40?"🌤️":cc<65?"⛅":cc<88?"🌥️":"☁️";
-  return cc<30?"🌙":"☁️";
+/* ---------- Wettersymbole als SVG: Regenmenge = Anzahl der Tropfen im Symbol (0 bis 7) ---------- */
+var WXDEFS='<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false"><defs>'+
+  '<linearGradient id="wxc1" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="30"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#b4c2d6"/></linearGradient>'+
+  '<linearGradient id="wxc2" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="30"><stop offset="0" stop-color="#e4e9f0"/><stop offset="1" stop-color="#9aa9bd"/></linearGradient>'+
+  '<linearGradient id="wxc3" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="30"><stop offset="0" stop-color="#b8c3d2"/><stop offset="1" stop-color="#6c7b90"/></linearGradient>'+
+  '<linearGradient id="wxs" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffe680"/><stop offset="1" stop-color="#f6a21d"/></linearGradient>'+
+  '<linearGradient id="wxd" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#86ccff"/><stop offset="1" stop-color="#2a78d6"/></linearGradient>'+
+  '<linearGradient id="wxb" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffe86e"/><stop offset="1" stop-color="#ffab00"/></linearGradient>'+
+  '<linearGradient id="wxm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffe58a"/><stop offset="1" stop-color="#e9a516"/></linearGradient>'+
+  '</defs></svg>';
+function cloudSvg(x,y,s,grad){
+  var f='url(#'+grad+')';
+  return '<g transform="translate('+x+' '+y+') scale('+s+')"><circle cx="11" cy="19" r="9" fill="'+f+'"/><circle cx="23" cy="12" r="12" fill="'+f+'"/><circle cx="34" cy="19.5" r="9" fill="'+f+'"/><rect x="2" y="19" width="40" height="10" rx="5" fill="'+f+'"/></g>';
 }
-function wxIcon(o){
-  var T=o.scope==="hour"?{rel:0.1,lo:0.5,hi:2.5}:o.scope==="period"?{rel:0.2,lo:1,hi:5}:{rel:0.3,lo:1,hi:8};
-  var mm=o.mm||0, cc=(o.cc==null?50:o.cc), day=!!o.day;
-  if(mm>=T.rel){
-    if(o.th) return ["⛈️","Gewitter","storm"];
-    if(o.sn) return ["🌨️",mm<T.lo?"leichter Schneefall":"Schneefall","snow"];
-    if(mm<T.lo) return [(day&&cc<70)?"🌦️":"🌧️","leichter Regen","rain"];
-    if(mm<T.hi) return ["🌧️","Regen","rain"];
-    return ["🌧️","kräftiger Regen","rain"];
+function sunSvg(cx,cy,r){
+  var rays='';
+  for(var i=0;i<8;i++){
+    var a=i*Math.PI/4, r1=r+3.2, r2=r+7;
+    rays+='<line x1="'+(cx+Math.cos(a)*r1).toFixed(1)+'" y1="'+(cy+Math.sin(a)*r1).toFixed(1)+'" x2="'+(cx+Math.cos(a)*r2).toFixed(1)+'" y2="'+(cy+Math.sin(a)*r2).toFixed(1)+'"/>';
   }
-  if(o.fg) return ["🌫️","Nebel","fog"];
-  return [skyEmoji(cc,day),skyWord(cc,day),cc<40?"clear":"cloud"];
+  return '<g stroke="#f7b52c" stroke-width="2.6" stroke-linecap="round">'+rays+'</g><circle cx="'+cx+'" cy="'+cy+'" r="'+r+'" fill="url(#wxs)"/>';
 }
-// Regenmenge als Tropfenskala: 1 Tropfen = ganz wenig ... 7 Tropfen = Starkregen (Schwellen je nach Zeitraum)
+function moonSvg(cx,cy,r){
+  var ax=(cx+r*0.28).toFixed(1), y1=(cy-r*0.96).toFixed(1), y2=(cy+r*0.96).toFixed(1), r2=(r*0.82).toFixed(1);
+  return '<path d="M'+ax+' '+y1+'A'+r+' '+r+' 0 1 0 '+ax+' '+y2+'A'+r2+' '+r2+' 0 0 1 '+ax+' '+y1+'Z" fill="url(#wxm)"/>';
+}
+var WX_DROP="M5 0C7.4 3.6 10 6.6 10 9.4A5 5 0 0 1 0 9.4C0 6.6 2.6 3.6 5 0Z";
+// Anordnung der Tropfen (Mitte x, Oberkante y, Breite, Höhe) je Anzahl
+var WX_LAYOUT={
+  1:[[32,41,12,17]],
+  2:[[23,42,11,16],[41,42,11,16]],
+  3:[[16,42,10,15],[32,42,10,15],[48,42,10,15]],
+  4:[[13,42,9,14],[26,42,9,14],[38,42,9,14],[51,42,9,14]],
+  5:[[14,40,9,11.5],[30,40,9,11.5],[46,40,9,11.5],[22,52,9,11.5],[38,52,9,11.5]],
+  6:[[14,40,9,11.5],[30,40,9,11.5],[46,40,9,11.5],[22,52,9,11.5],[38,52,9,11.5],[54,52,9,11.5]],
+  7:[[10,40,8.4,11],[24,40,8.4,11],[38,40,8.4,11],[52,40,8.4,11],[17,52,8.4,11],[31,52,8.4,11],[45,52,8.4,11]]
+};
+function dropsSvg(n,snow){
+  var L=WX_LAYOUT[Math.max(1,Math.min(7,n))], o='';
+  L.forEach(function(d){
+    if(snow){
+      var r=Math.min(d[2],d[3])*0.55, cx=d[0], cy=d[1]+d[3]/2;
+      o+='<g stroke="#6fa9e6" stroke-width="1.7" stroke-linecap="round">';
+      for(var k=0;k<3;k++){ var a=k*Math.PI/3; o+='<line x1="'+(cx-Math.cos(a)*r).toFixed(1)+'" y1="'+(cy-Math.sin(a)*r).toFixed(1)+'" x2="'+(cx+Math.cos(a)*r).toFixed(1)+'" y2="'+(cy+Math.sin(a)*r).toFixed(1)+'"/>'; }
+      o+='</g>';
+    } else {
+      o+='<path transform="translate('+(d[0]-d[2]/2)+' '+d[1]+') scale('+(d[2]/10).toFixed(3)+' '+(d[3]/14).toFixed(3)+')" d="'+WX_DROP+'" fill="url(#wxd)"/>';
+    }
+  });
+  return o;
+}
+var WX_TH={1:[[50,43,8,11]],2:[[13,43,8,11],[51,43,8,11]],3:[[13,43,8,11],[51,43,8,11],[51,54,8,10]],4:[[13,43,8,11],[13,54,8,10],[51,43,8,11],[51,54,8,10]]};
+function thDropsSvg(n){
+  var o='';
+  (WX_TH[Math.max(1,Math.min(4,n))]).forEach(function(d){ o+='<path transform="translate('+(d[0]-d[2]/2)+' '+d[1]+') scale('+(d[2]/10).toFixed(3)+' '+(d[3]/14).toFixed(3)+')" d="'+WX_DROP+'" fill="url(#wxd)"/>'; });
+  return o;
+}
+function boltSvg(){ return '<path d="M35 36 24 53h7l-4 11 14-19h-8z" fill="url(#wxb)" stroke="#e59a00" stroke-width="0.8" stroke-linejoin="round"/>'; }
+// sp: {sky:"clear|mclear|part|mcloud|cloud|moon|mooncloud|fog", n:Tropfenzahl, snow, th, sun}
+function wxSvg(sp){
+  var g='', n=sp.n||0;
+  if(n>0||sp.th){
+    var grad=sp.th?'wxc3':(n>=5?'wxc3':(n>=3?'wxc2':'wxc1'));
+    if(sp.sun) g+=sunSvg(20,17,9);
+    g+=cloudSvg(sp.sun?12:7,sp.sun?10:5,sp.sun?1.0:1.15,grad);
+    if(sp.th){ if(n>0) g+=thDropsSvg(n); g+=boltSvg(); }
+    else if(n>0) g+=dropsSvg(n,sp.snow);
+  } else if(sp.sky==="fog"){
+    g+=cloudSvg(9,8,1.05,'wxc1')+'<g stroke="#a9b6c6" stroke-width="3.2" stroke-linecap="round"><line x1="12" y1="46" x2="52" y2="46"/><line x1="18" y1="53" x2="58" y2="53"/><line x1="10" y1="60" x2="42" y2="60"/></g>';
+  } else switch(sp.sky){
+    case "clear":    g=sunSvg(32,32,14); break;
+    case "mclear":   g=sunSvg(26,26,12)+cloudSvg(26,31,0.72,'wxc1'); break;
+    case "part":     g=sunSvg(22,22,10)+cloudSvg(14,24,1.0,'wxc1'); break;
+    case "mcloud":   g=sunSvg(19,19,8)+cloudSvg(7,19,1.15,'wxc1'); break;
+    case "moon":     g=moonSvg(32,32,17); break;
+    case "mooncloud":g=moonSvg(24,24,12)+cloudSvg(14,26,1.0,'wxc1'); break;
+    default:         g=cloudSvg(17,11,0.95,'wxc2')+cloudSvg(6,22,1.15,'wxc1');   // bedeckt
+  }
+  return '<svg class="wxi" focusable="false" viewBox="0 0 64 64" width="1em" height="1em" aria-hidden="true">'+g+'</svg>';
+}
+
+document.body.insertAdjacentHTML("afterbegin",WXDEFS);
+// Wettersymbol aus Menge, Bewölkung und Wetterart (nicht nur aus dem Wettercode, der schon bei Spuren von Regen "Regen" meldet)
+// Tropfenzahl 1 (ganz wenig) bis 7 (Starkregen); Schwellen in L/qm je Zeitraum
 var DROP_T={hour:[0.1,0.3,0.7,1.5,3,6,10],period:[0.2,0.5,1.5,3,6,12,20],day:[0.3,1,3,6,12,20,35]};
 function dropScale(mm,scope){ var T=DROP_T[scope]||DROP_T.day, n=0; for(var i=0;i<7;i++){ if((mm||0)>=T[i]) n=i+1; } return n; }
-function dropsHtml(mm,scope,w){
-  var n=dropScale(mm,scope), sz=w||9;
-  if(!n) return '<span class="dps"></span>';
-  var out='';
-  for(var i=0;i<7;i++) out+='<svg class="dp'+(i<n?' on':'')+'" width="'+sz+'" height="'+Math.round(sz*1.4)+'" viewBox="0 0 10 14" aria-hidden="true"><path d="M5 .8C7.2 4 9 6.3 9 9a4 4 0 0 1-8 0C1 6.3 2.8 4 5 .8z"/></svg>';
-  return '<span class="dps" role="img" aria-label="Regenintensität '+n+' von 7" title="Regenintensität '+n+' von 7">'+out+'</span>';
+function wxIcon(o){
+  var T=o.scope==="hour"?{rel:0.1,lo:0.5,hi:2.5}:o.scope==="period"?{rel:0.2,lo:1,hi:5}:{rel:0.3,lo:1,hi:8};
+  var mm=o.mm||0, cc=(o.cc==null?50:o.cc), day=!!o.day, n=dropScale(mm,o.scope||"day");
+  if(mm>=T.rel){
+    n=Math.max(1,n);
+    if(o.th) return [wxSvg({n:n,th:true}),"Gewitter","storm"];
+    if(o.sn) return [wxSvg({n:n,snow:true}),mm<T.lo?"leichter Schneefall":"Schneefall","snow"];
+    var sun=day&&cc<70&&n<=3;
+    if(mm<T.lo) return [wxSvg({n:n,sun:sun}),"leichter Regen","rain"];
+    if(mm<T.hi) return [wxSvg({n:n}),"Regen","rain"];
+    return [wxSvg({n:n}),"kräftiger Regen","rain"];
+  }
+  if(o.fg) return [wxSvg({sky:"fog"}),"Nebel","fog"];
+  var sky=day?(cc<15?"clear":cc<40?"mclear":cc<65?"part":cc<88?"mcloud":"cloud"):(cc<30?"moon":cc<65?"mooncloud":"cloud");
+  return [wxSvg({sky:sky}),skyWord(cc,day),cc<40?"clear":"cloud"];
 }
 function periodWx(a){ return wxIcon({scope:"period",mm:a.mm,cc:a.cc,day:a.day,th:a.th,sn:a.sn,fg:a.fg}); }
 function dayWx(k){
@@ -713,7 +787,7 @@ function fcRender(){
   var ptabs=P.map(function(a,i){
     var w=periodWx(a);
     return '<button type="button" role="tab" class="ptab'+(i===selP?' on':'')+'" data-p="'+i+'" aria-selected="'+(i===selP)+'" title="'+esc(w[1])+'">'+
-      '<span class="pn">'+a.name+'</span><span class="pt tn" style="color:'+tcol(a.t)+'">'+r(a.t)+'°</span><span class="pi">'+w[0]+'</span><span class="pd">'+dropsHtml(a.mm,'period')+'</span>'+
+      '<span class="pn">'+a.name+'</span><span class="pt tn" style="color:'+tcol(a.t)+'">'+r(a.t)+'°</span><span class="pi">'+w[0]+'</span>'+
       '<span class="pw">'+(a.ws>=1?windRose(a.dir,18,a.ws)+'<b>'+r(a.ws)+'</b>'+gustHtml(a.gust):'')+'</span><span class="pp">'+drop+r(a.pop)+' %</span><span class="pq">'+(a.mm>=0.1?fmtL(a.mm):'0')+' L/qm</span></button>';
   }).join("");
 
@@ -726,7 +800,7 @@ function fcRender(){
     return '<button type="button" role="tab" class="dtab'+(k===selD?' on':'')+'" data-d="'+k+'" aria-selected="'+(k===selD)+'" title="'+esc(w[1])+'">'+
       '<span class="dth"><b>'+nm+'</b>'+date+'</span><span class="dbd">'+
       '<span class="hi tn" style="color:'+tcol(hi)+'">'+r(hi)+'°</span><span class="lo tn" style="color:'+tcol(lo)+'">'+r(lo)+'°</span>'+
-      '<span class="di">'+w[0]+'</span><span class="dd2">'+dropsHtml(d.precipitation_sum[k],'day')+'</span><span class="dw">'+windRose(da.dir,18,da.ws)+'<b>'+r(da.ws)+'</b>'+gustHtml(d.wind_gusts_10m_max[k])+'</span>'+
+      '<span class="di">'+w[0]+'</span><span class="dw">'+windRose(da.dir,18,da.ws)+'<b>'+r(da.ws)+'</b>'+gustHtml(d.wind_gusts_10m_max[k])+'</span>'+
       '<span class="dm">'+(ss!=null?svg("sun",14)+ss+' h':'')+'</span><span class="dm rn">'+drop+r(pr)+' %</span><span class="dm rn">'+(d.precipitation_sum[k]>=0.1?fmtL(d.precipitation_sum[k]):'0')+' L/qm</span></span></button>';
   }).join("");
 
@@ -737,7 +811,7 @@ function fcRender(){
     stHtml='<div class="stt">Stündlich ab '+esc(dayWordFor(st.date,today))+', '+pad2(st.hr)+' Uhr</div>'+
       '<div class="tl" data-key="'+key+'"><div class="in" style="width:'+(slots.length*COL)+'px">'+dayrowHtml(slots)+stripHtml(slots)+'</div></div>'+
       '<details class="lgd"'+(LGOPEN?' open':'')+'><summary>Legende</summary>'+
-      '<div class="olnote lg">Regenmenge je Stunde: <b class="m1">gemessen</b> · <b class="m2">vorhergesagt</b> (L/qm). Windpfeil: zeigt, wohin der Wind weht; Farbe von schwarz (schwach) bis rot (stark). Zahl = mittlerer Wind in km/h, in Klammern die Böen in km/h. Regentropfen: 1 Tropfen = ganz wenig Regen, 7 Tropfen = Starkregen. Bereits vergangene Stunden zeigen die Messwerte der Station.</div></details>';
+      '<div class="olnote lg">Regenmenge je Stunde: <b class="m1">gemessen</b> · <b class="m2">vorhergesagt</b> (L/qm). Windpfeil: zeigt, wohin der Wind weht; Farbe von schwarz (schwach) bis rot (stark). Zahl = mittlerer Wind in km/h, in Klammern die Böen in km/h. Im Wettersymbol zeigt die Zahl der Tropfen die Regenmenge: 1 Tropfen = ganz wenig, 7 Tropfen = Starkregen. Bereits vergangene Stunden zeigen die Messwerte der Station.</div></details>';
   }
 
   fcHtml='<section class="card full fc tp"><h2>Vorhersage%CHIP%</h2>'+
@@ -865,7 +939,6 @@ var TOPCSS=`
 .tp .hc.past{opacity:.82}
 .tp .hc.now{background:var(--a-card2);border-radius:12px}
 .tp .hh{font-size:11.5px;font-weight:600;color:var(--a-mute);white-space:nowrap}
-.tp .hi{font-size:22px;line-height:1.35;min-height:30px}
 .tp .ht{font-family:var(--a-disp);font-weight:700;font-size:15px}
 .tp .hp{font-size:11px;font-weight:700;color:var(--a-ink2);min-height:14px;white-space:nowrap}
 .dps{display:inline-flex;align-items:flex-end;gap:1px;min-height:12px;color:inherit}
@@ -874,9 +947,10 @@ var TOPCSS=`
 .dps .dp{fill:currentColor;opacity:.18}
 .dps .dp.on{opacity:1}
 .fc .pd{display:flex;justify-content:center;min-height:13px;color:var(--a-rain)}
-.tp .hdp{display:flex;justify-content:center;min-height:10px;margin-top:-2px}
-.tp .hdp .dps{min-height:9px;gap:0}
-.fc .dd2{display:flex;justify-content:center;min-height:13px;color:var(--a-rain);margin-top:-2px}
+.wxi{display:inline-block;vertical-align:middle;overflow:visible;filter:drop-shadow(0 1px 1.2px rgba(20,40,70,.35))}
+.fc .di,.fc .pi{font-size:46px;line-height:1.1;display:flex;justify-content:center}
+.tp .hc .hi{font-size:34px;line-height:1.1;min-height:36px}
+.wk .cw .e{font-size:68px}
 .tp .hm{font-size:11px;font-weight:700;min-height:26px;white-space:nowrap;display:flex;flex-direction:column;align-items:center;line-height:1.1}
 .tp .hm .u{font-size:9px;font-weight:600;opacity:.9}
 .tp .m1{color:var(--a-rain)}
@@ -955,12 +1029,11 @@ function heroHtml(){
 
 function stripHtml(slots){
   return '<div class="strip">'+slots.map(function(o){
-    var past=o.s<0, w=past?null:wxIcon({scope:"hour",mm:o.mm,cc:o.cc,day:o.day,th:o.code>=95,sn:!!SNOWC[o.code],fg:o.code===45||o.code===48});
+    var past=o.s<0, w=past?((o.mm!=null&&o.mm>=0.1)?wxIcon({scope:"hour",mm:o.mm,cc:90,day:0}):null):wxIcon({scope:"hour",mm:o.mm,cc:o.cc,day:o.day,th:o.code>=95,sn:!!SNOWC[o.code],fg:o.code===45||o.code===48});
     var mm=(o.mm!=null&&o.mm>=0.05)?'<span>'+fmtL(o.mm)+'</span><span class="u">L/qm</span>':'';
     var wind=o.ws!=null?'<div class="hw">'+(o.dir!=null?windRose(o.dir,20,o.ws):'')+'<span>'+r(o.ws)+(o.gust!=null?' <i class="gs'+(o.gust>=60?' hot':'')+'">('+r(o.gust)+')</i>':'')+'</span></div>':'<div class="hw"></div>';
     return '<div class="hc'+(past?' past':'')+(o.s===0?' now':'')+'"><div class="hh">'+(o.s===0?'Jetzt':o.hr+' Uhr')+'</div>'+
       '<div class="hi"'+(w?' title="'+esc(w[1])+'"':'')+'>'+(w?w[0]:'')+'</div>'+
-      '<div class="hdp '+(past?'m1':'m2')+'">'+dropsHtml(o.mm,'hour',6)+'</div>'+
       '<div class="ht tn"'+(o.t!=null?' style="color:'+tcol(o.t)+'"':'')+'>'+(o.t!=null?r(o.t)+'°':'–')+'</div>'+
       '<div class="hp">'+(past?'':(o.pop>=10?o.pop+' %':''))+'</div>'+
       '<div class="hm '+(past?'m1':'m2')+'">'+mm+'</div>'+wind+'</div>';
