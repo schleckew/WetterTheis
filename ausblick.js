@@ -553,6 +553,16 @@ function wxIcon(o){
   if(o.fg) return ["🌫️","Nebel","fog"];
   return [skyEmoji(cc,day),skyWord(cc,day),cc<40?"clear":"cloud"];
 }
+// Regenmenge als Tropfenskala: 1 Tropfen = ganz wenig ... 7 Tropfen = Starkregen (Schwellen je nach Zeitraum)
+var DROP_T={hour:[0.1,0.3,0.7,1.5,3,6,10],period:[0.2,0.5,1.5,3,6,12,20],day:[0.3,1,3,6,12,20,35]};
+function dropScale(mm,scope){ var T=DROP_T[scope]||DROP_T.day, n=0; for(var i=0;i<7;i++){ if((mm||0)>=T[i]) n=i+1; } return n; }
+function dropsHtml(mm,scope,w){
+  var n=dropScale(mm,scope), sz=w||9;
+  if(!n) return '<span class="dps"></span>';
+  var out='';
+  for(var i=0;i<7;i++) out+='<svg class="dp'+(i<n?' on':'')+'" width="'+sz+'" height="'+Math.round(sz*1.4)+'" viewBox="0 0 10 14" aria-hidden="true"><path d="M5 .8C7.2 4 9 6.3 9 9a4 4 0 0 1-8 0C1 6.3 2.8 4 5 .8z"/></svg>';
+  return '<span class="dps" role="img" aria-label="Regenintensität '+n+' von 7" title="Regenintensität '+n+' von 7">'+out+'</span>';
+}
 function periodWx(a){ return wxIcon({scope:"period",mm:a.mm,cc:a.cc,day:a.day,th:a.th,sn:a.sn,fg:a.fg}); }
 function dayWx(k){
   var d=FC.d, A=agg(idxFor(d.time[k],0,24)), D=dayAgg(k);
@@ -704,7 +714,7 @@ function fcRender(){
     var w=periodWx(a);
     return '<button type="button" role="tab" class="ptab'+(i===selP?' on':'')+'" data-p="'+i+'" aria-selected="'+(i===selP)+'" title="'+esc(w[1])+'">'+
       '<span class="pn">'+a.name+'</span><span class="pt tn" style="color:'+tcol(a.t)+'">'+r(a.t)+'°</span><span class="pi">'+w[0]+'</span>'+
-      '<span class="pw">'+(a.ws>=1?windRose(a.dir,18,a.ws)+'<b>'+r(a.ws)+'</b>'+gustHtml(a.gust):'')+'</span><span class="pp">'+drop+r(a.pop)+' %</span><span class="pq">'+(a.mm>=0.1?fmtL(a.mm):'0')+' L/qm</span></button>';
+      '<span class="pw">'+(a.ws>=1?windRose(a.dir,18,a.ws)+'<b>'+r(a.ws)+'</b>'+gustHtml(a.gust):'')+'</span><span class="pp">'+drop+r(a.pop)+' %</span><span class="pd">'+dropsHtml(a.mm,'period')+'</span><span class="pq">'+(a.mm>=0.1?fmtL(a.mm):'0')+' L/qm</span></button>';
   }).join("");
 
   var dtabs=d.time.map(function(t,k){
@@ -717,7 +727,7 @@ function fcRender(){
       '<span class="dth"><b>'+nm+'</b>'+date+'</span><span class="dbd">'+
       '<span class="hi tn" style="color:'+tcol(hi)+'">'+r(hi)+'°</span><span class="lo tn" style="color:'+tcol(lo)+'">'+r(lo)+'°</span>'+
       '<span class="di">'+w[0]+'</span><span class="dw">'+windRose(da.dir,18,da.ws)+'<b>'+r(da.ws)+'</b>'+gustHtml(d.wind_gusts_10m_max[k])+'</span>'+
-      '<span class="dm">'+(ss!=null?svg("sun",14)+ss+' h':'')+'</span><span class="dm rn">'+drop+r(pr)+' %</span><span class="dm rn">'+(d.precipitation_sum[k]>=0.1?fmtL(d.precipitation_sum[k]):'0')+' L/qm</span></span></button>';
+      '<span class="dm">'+(ss!=null?svg("sun",14)+ss+' h':'')+'</span><span class="dm rn">'+drop+r(pr)+' %</span><span class="dm rn">'+dropsHtml(d.precipitation_sum[k],'day')+'</span><span class="dm rn">'+(d.precipitation_sum[k]>=0.1?fmtL(d.precipitation_sum[k]):'0')+' L/qm</span></span></button>';
   }).join("");
 
   // Stundenleiste ab Beginn des gewählten Abschnitts
@@ -727,7 +737,7 @@ function fcRender(){
     stHtml='<div class="stt">Stündlich ab '+esc(dayWordFor(st.date,today))+', '+pad2(st.hr)+' Uhr</div>'+
       '<div class="tl" data-key="'+key+'"><div class="in" style="width:'+(slots.length*COL)+'px">'+dayrowHtml(slots)+stripHtml(slots)+'</div></div>'+
       '<details class="lgd"'+(LGOPEN?' open':'')+'><summary>Legende</summary>'+
-      '<div class="olnote lg">Regenmenge je Stunde: <b class="m1">gemessen</b> · <b class="m2">vorhergesagt</b> (L/qm). Windpfeil: zeigt, wohin der Wind weht; Farbe von schwarz (schwach) bis rot (stark). Zahl = mittlerer Wind in km/h, in Klammern die Böen in km/h. Bereits vergangene Stunden zeigen die Messwerte der Station.</div></details>';
+      '<div class="olnote lg">Regenmenge je Stunde: <b class="m1">gemessen</b> · <b class="m2">vorhergesagt</b> (L/qm). Windpfeil: zeigt, wohin der Wind weht; Farbe von schwarz (schwach) bis rot (stark). Zahl = mittlerer Wind in km/h, in Klammern die Böen in km/h. Regentropfen: 1 Tropfen = ganz wenig Regen, 7 Tropfen = Starkregen. Bereits vergangene Stunden zeigen die Messwerte der Station.</div></details>';
   }
 
   fcHtml='<section class="card full fc tp"><h2>Vorhersage%CHIP%</h2>'+
@@ -858,7 +868,14 @@ var TOPCSS=`
 .tp .hi{font-size:22px;line-height:1.35;min-height:30px}
 .tp .ht{font-family:var(--a-disp);font-weight:700;font-size:15px}
 .tp .hp{font-size:11px;font-weight:700;color:var(--a-ink2);min-height:14px;white-space:nowrap}
-.tp .hm{font-size:11px;font-weight:700;min-height:26px;white-space:nowrap;display:flex;flex-direction:column;align-items:center;line-height:1.1}
+.dps{display:inline-flex;align-items:flex-end;gap:1px;min-height:12px;color:inherit}
+.dps svg{display:block}
+.fc .dm .dps svg{width:9px;height:13px}
+.dps .dp{fill:currentColor;opacity:.18}
+.dps .dp.on{opacity:1}
+.fc .pd{display:flex;justify-content:center;min-height:13px;color:var(--a-rain)}
+.tp .hm .dps{min-height:9px;gap:0;margin-bottom:1px}
+.tp .hm{font-size:11px;font-weight:700;min-height:36px;white-space:nowrap;display:flex;flex-direction:column;align-items:center;line-height:1.1}
 .tp .hm .u{font-size:9px;font-weight:600;opacity:.9}
 .tp .m1{color:var(--a-rain)}
 .tp .m2{color:var(--a-ext)}
@@ -943,7 +960,7 @@ function stripHtml(slots){
       '<div class="hi"'+(w?' title="'+esc(w[1])+'"':'')+'>'+(w?w[0]:'')+'</div>'+
       '<div class="ht tn"'+(o.t!=null?' style="color:'+tcol(o.t)+'"':'')+'>'+(o.t!=null?r(o.t)+'°':'–')+'</div>'+
       '<div class="hp">'+(past?'':(o.pop>=10?o.pop+' %':''))+'</div>'+
-      '<div class="hm '+(past?'m1':'m2')+'">'+mm+'</div>'+wind+'</div>';
+      '<div class="hm '+(past?'m1':'m2')+'">'+dropsHtml(o.mm,'hour',6)+mm+'</div>'+wind+'</div>';
   }).join("")+'</div>';
 }
 
