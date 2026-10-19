@@ -50,9 +50,9 @@ function renderOutlook(){
   var chip= warnOk===true ? '<span class="chipok">Keine DWD-Warnungen</span>' : '';
   var root=$("outlook");
   if(!$("ol-main")){
-    root.innerHTML='<div class="ol">'+
+    root.innerHTML='<div class="ol"><div id="ol-main" class="full" style="display:contents"></div>'+
       '<section class="card full"><h2>Radar und Wolken</h2><div class="rmode" role="group" aria-label="Kartenansicht"><button type="button" data-m="radar" class="on">Regenradar</button><button type="button" data-m="sat">Wolken (Satellit)</button><button type="button" data-m="prog">Prognose</button><select id="rsat" hidden aria-label="Satellitenbild wählen"></select></div><div class="rdays" id="rkind" hidden style="margin:0 0 10px"><button type="button" data-pk="rain">Regen</button><button type="button" data-pk="cloud">Wolken</button></div><div id="ol-radar" aria-label="Wetterkarte"></div><div class="rctl" id="rctl" hidden><button id="rplay" type="button" aria-label="Animation starten oder anhalten">⏸</button><input id="rslide" type="range" min="0" max="0" value="0" aria-label="Zeitpunkt wählen"><span id="rtime" class="tn"></span></div><div class="rdays" id="rdays" hidden><button type="button" data-dj="0">Heute</button><button type="button" data-dj="1">Morgen</button><button type="button" data-dj="2">Übermorgen</button></div><div class="rleg" id="rleg" hidden></div><div class="olnote" id="rinfo">Niederschlagsradar des Deutschen Wetterdienstes, letzte Stunde · Karte: OpenStreetMap</div></section>'+
-      '<div id="ol-day" style="display:contents"></div><div id="ol-main" class="full" style="display:contents"></div><div id="ol-long" style="display:contents"></div><div id="ol-sun" style="display:contents"></div></div>';
+      '<div id="ol-long" style="display:contents"></div><div id="ol-sun" style="display:contents"></div></div>';
     initRadar();
   }
   $("ol-main").innerHTML=(fcHtml?fcHtml.replace("%CHIP%",chip):"");
@@ -407,6 +407,10 @@ var FCCSS=`
 .fc .pw b,.fc .dw b{font-weight:600}
 .fc .pp{display:inline-flex;align-items:center;gap:3px;font-size:13px;font-weight:700;color:var(--a-rain)}
 .fc .pp svg{width:13px;height:13px}
+.fc .dtabs{margin-top:8px}
+.fc .ptabs{margin-top:14px}
+.fc .stt{font-size:13.5px;font-weight:700;color:var(--a-ink2);margin:14px 0 2px}
+.fc .lgd .tl{margin-top:6px}
 .fc .pq{font-size:11.5px;font-weight:700;color:var(--a-rain);min-height:15px;white-space:nowrap}
 .fc .dh{margin:16px 0 12px;font-family:var(--a-disp);font-size:15px;font-weight:700;color:var(--a-wind)}
 .fc .dhb{font:inherit;color:inherit;background:none;border:0;padding:4px 0;margin:0;cursor:pointer;display:flex;align-items:center;gap:10px;width:100%;text-align:left;border-radius:8px}
@@ -528,21 +532,13 @@ function agg(ix){
 }
 function dayWord(att){var d0=FC.now.slice(0,10);return att===d0?"heute":att===addDay(d0,1)?"morgen":DAYN[new Date(att+"T12:00:00").getDay()]}
 function nightTag(date){return "zum "+DAYN[new Date(date+"T12:00:00").getDay()]}
+var TABS=[[1,0],[2,0],[3,0],[0,1]];   // [Index in PARTS, Tagesversatz]: Vormittag, Nachmittag, Abend, Nacht (zum Folgetag)
 function periods(k){
-  var now=FC.now, d0=now.slice(0,10), H=+now.slice(11,13), out=[], list=[];
-  if(k===0){
-    var p0=0;
-    for(var q=0;q<4;q++){ if(H>=PARTS[q].a&&H<PARTS[q].b) p0=q; }
-    for(var j=0;j<4;j++) list.push([(p0+j)%4,(p0+j)>=4?addDay(d0,1):d0,j===0]);
-  } else {
-    var date=FC.d.time[k];
-    list=[[1,date,false],[2,date,false],[3,date,false],[0,addDay(date,1),false]];
-  }
-  list.forEach(function(e){
-    var ix=idxFor(e[1],PARTS[e[0]].a,PARTS[e[0]].b);
-    if(e[2]) ix=ix.filter(function(i){return i>=FC.i0});
+  var date=FC.d.time[k], out=[];
+  TABS.forEach(function(e){
+    var dd=addDay(date,e[1]), ix=idxFor(dd,PARTS[e[0]].a,PARTS[e[0]].b);
     if(!ix.length) return;
-    var a=agg(ix); a.name=PARTS[e[0]].n; a.tag=e[0]===0?nightTag(e[1]):""; a.att=(e[0]===0&&!e[2])?addDay(e[1],-1):e[1]; out.push(a);
+    var a=agg(ix); a.name=PARTS[e[0]].n; a.tag=e[0]===0?nightTag(dd):""; out.push(a);
   });
   return out;
 }
@@ -634,11 +630,45 @@ function periodDetail(a){
     '</div>';
 }
 
+var M24OPEN=false, selInit=false;
+function pad2(n){return (n<10?"0":"")+n}
+function stripStartFor(k,p){ var date=FC.d.time[k]; return p===3?{date:addDay(date,1),hr:0}:{date:date,hr:[6,12,18][p]}; }
+// Stundenwerte ab Beginn des gewählten Tagesabschnitts (bereits vergangene Stunden aus den Messwerten der Station)
+function fcSlots(k,p){
+  var st=stripStartFor(k,p), h=FC.h, i1=h.time.indexOf(st.date+"T"+pad2(st.hr)+":00");
+  if(i1<0) return [];
+  var nowH=Math.floor(Date.now()/3600000)*3600, ah={}, out=[];
+  if(ARC) ARC.hours.forEach(function(r){ ah[r.t]=r; });
+  for(var i=i1;i<Math.min(i1+AHEAD,h.time.length);i++){
+    var s=i-FC.i0, o={s:s,date:h.time[i].slice(0,10),hr:+h.time[i].slice(11,13),t:null,mm:null,ws:null,dir:null,pop:null,code:null,day:h.is_day[i]};
+    if(s>=0){ o.t=h.temperature_2m[i]; o.mm=h.precipitation[i]; o.ws=h.wind_speed_10m[i]; o.dir=h.wind_direction_10m[i]; o.pop=h.precipitation_probability[i]; o.code=h.weather_code[i]; }
+    else{ var rw=ah[nowH+s*3600]; if(rw){ o.t=rw.temp; o.mm=rw.mm; o.ws=rw.wind; o.dir=rw.dir; } }
+    out.push(o);
+  }
+  return out;
+}
+function dayrowHtml(slots){
+  var today=berlin(Math.floor(Date.now()/3600000)*3600).date, starts=[], html='<div class="dayrow">';
+  slots.forEach(function(o,i){ if(i===0||o.hr===0) starts.push(i); });
+  starts.forEach(function(st,k){
+    var len=(k+1<starts.length?starts[k+1]:slots.length)-st;
+    html+='<div class="dseg" style="width:'+(len*COL)+'px">'+(len>=3?'<span>'+esc(dayWordFor(slots[st].date,today))+'</span>':'')+'</div>';
+  });
+  return html+'</div>';
+}
+function m24Html(){
+  if(!ARC||!ARC.hours.length) return '';
+  var past=buildSlots().slots.filter(function(o){return o.s<0});
+  if(!past.length) return '';
+  return '<details class="lgd m24"'+(M24OPEN?' open':'')+'><summary>Messwerte der letzten 24 Stunden</summary>'+
+    '<div class="tl"><div class="in" style="width:'+(past.length*COL)+'px">'+dayrowHtml(past)+stripHtml(past)+'</div></div></details>';
+}
 function fcRender(){
   if(!FC) return;
-  var h=FC.h, d=FC.d, P=periods(selD);
-  if(selP>=P.length) selP=0;
+  var h=FC.h, d=FC.d;
   if(selD>=d.time.length) selD=0;
+  var P=periods(selD);
+  if(selP>=P.length) selP=Math.max(0,P.length-1);
   var drop='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+IC.drop+'</svg>';
 
   var ptabs=P.map(function(a,i){
@@ -661,28 +691,44 @@ function fcRender(){
       '<span class="dm">'+(ss!=null?svg("sun",14)+ss+' h':'')+'</span><span class="dm rn">'+drop+r(pr)+' %</span><span class="dm rn">'+(d.precipitation_sum[k]>=0.1?fmtL(d.precipitation_sum[k]):'0')+' L/qm</span></span></button>';
   }).join("");
 
-  var groups=[];
-  P.forEach(function(a){var L=dayWord(a.att); if(groups.length&&groups[groups.length-1].l===L) groups[groups.length-1].n++; else groups.push({l:L,n:1});});
-  var pgr='<div class="pgroups" style="--np:'+Math.max(P.length,1)+'">'+groups.map(function(g){return '<span style="grid-column:span '+g.n+'">'+g.l+'</span>'}).join("")+'</div>';
+  // Stundenleiste ab Beginn des gewählten Abschnitts
+  var slots=fcSlots(selD,selP), key=selD+"|"+selP, stHtml='';
+  if(slots.length){
+    var st=stripStartFor(selD,selP), today=berlin(Math.floor(Date.now()/3600000)*3600).date;
+    stHtml='<div class="stt">Stündlich ab '+esc(dayWordFor(st.date,today))+', '+pad2(st.hr)+' Uhr</div>'+
+      '<div class="tl" data-key="'+key+'"><div class="in" style="width:'+(slots.length*COL)+'px">'+dayrowHtml(slots)+stripHtml(slots)+'</div></div>'+
+      '<details class="lgd"'+(LGOPEN?' open':'')+'><summary>Legende</summary>'+
+      '<div class="olnote lg">Regenmenge je Stunde: <b class="m1">gemessen</b> · <b class="m2">vorhergesagt</b> (L/qm). Windpfeil: zeigt, wohin der Wind weht; Farbe von schwarz (schwach) bis rot (stark); Zahl in km/h. Bereits vergangene Stunden zeigen die Messwerte der Station.</div></details>';
+  }
 
-  fcHtml='<section class="card full fc"><h2>Vorhersage%CHIP%</h2>'+pgr+
-    '<div class="ptabs" role="tablist" aria-label="Tagesabschnitte" style="--np:'+Math.max(P.length,1)+'">'+ptabs+'</div>'+
-    (P.length?periodDetail(P[selP]):'')+
+  fcHtml='<section class="card full fc tp"><h2>Vorhersage%CHIP%</h2>'+
     '<div class="dtabs" role="tablist" aria-label="Tage">'+dtabs+'</div>'+
+    '<div class="ptabs" role="tablist" aria-label="Tagesabschnitte" style="--np:'+Math.max(P.length,1)+'">'+ptabs+'</div>'+
+    stHtml+
+    (P.length?periodDetail(P[selP]):'')+
     '<div class="ddet">'+dayDetail(selD)+'</div>'+
+    m24Html()+
     '<div class="olnote">Modellvorhersage für Wincheringen · Open-Meteo · Warnungen: DWD über Brightsky</div></section>';
 
   var sc=document.querySelector("#outlook .dtabs"), left=sc?sc.scrollLeft:0;
+  var tl0=document.querySelector("#outlook .fc > .tl"), keyOld=tl0?tl0.getAttribute("data-key"):null, leftOld=tl0?tl0.scrollLeft:0;
   renderOutlook();
   sc=document.querySelector("#outlook .dtabs"); if(sc) sc.scrollLeft=left;
-  renderDayStrip();
+  var tl1=document.querySelector("#outlook .fc > .tl"); if(tl1) tl1.scrollLeft=(keyOld===key)?leftOld:0;
+  var m=document.querySelector("#outlook .m24 .tl"); if(m&&M24OPEN) m.scrollLeft=m.scrollWidth;
 }
 
+$("outlook").addEventListener("toggle",function(e){
+  var el=e.target; if(!el.classList||!el.classList.contains("lgd")) return;
+  if(el.classList.contains("m24")){ M24OPEN=el.open; if(el.open){ var sc=el.querySelector(".tl"); if(sc) sc.scrollLeft=sc.scrollWidth; } }
+  else LGOPEN=el.open;
+},true);
 function buildForecast(j){
   var h=j.hourly, d=j.daily, now=nowLocal().slice(0,13)+":00";
   var i0=0; while(i0<h.time.length&&h.time[i0]<now) i0++;
   if(i0>=h.time.length) i0=h.time.length-1;
   FC={h:h,d:d,now:now,i0:i0};
+  if(!selInit){ var H0=+now.slice(11,13); selP=H0>=18?2:(H0>=12?1:0); selInit=true; }   // Start: aktueller Tagesabschnitt
   sunHtml=sunCard(d);
   fcRender();
   renderTop();
@@ -705,7 +751,7 @@ $("outlook").addEventListener("click",function(e){
   }
   var b=e.target.closest?e.target.closest("[data-p],[data-d]"):null;
   if(!b||!FC) return;
-  if(b.hasAttribute("data-p")) selP=+b.getAttribute("data-p"); else { selD=+b.getAttribute("data-d"); selP=0; }
+  if(b.hasAttribute("data-p")) selP=+b.getAttribute("data-p"); else { selD=+b.getAttribute("data-d"); }
   fcRender();
 });
 
@@ -783,7 +829,8 @@ var TOPCSS=`
 .tp .hi{font-size:22px;line-height:1.35;min-height:30px}
 .tp .ht{font-family:var(--a-disp);font-weight:700;font-size:15px}
 .tp .hp{font-size:11px;font-weight:700;color:var(--a-ink2);min-height:14px;white-space:nowrap}
-.tp .hm{font-size:10px;font-weight:700;min-height:15px;white-space:nowrap;letter-spacing:-.3px}
+.tp .hm{font-size:11px;font-weight:700;min-height:26px;white-space:nowrap;display:flex;flex-direction:column;align-items:center;line-height:1.1}
+.tp .hm .u{font-size:9px;font-weight:600;opacity:.9}
 .tp .m1{color:var(--a-rain)}
 .tp .m2{color:var(--a-ext)}
 .tp .hw{display:flex;flex-direction:column;align-items:center;gap:1px;min-height:36px;font-size:11px;font-weight:600;color:var(--a-ink2);margin-top:4px}
@@ -846,35 +893,18 @@ function heroHtml(){
     '<span class="c2">'+svgI("gauge")+r(pr)+' hPa</span>'+
     '<span class="c2">'+windRose(wd,18,ws)+r(ws)+' km/h<small>Böen '+r(gu)+'</small></span>'+
     (st&&L.rain!=null?'<span class="c2">'+svgI("drop")+fmtL(L.rain)+' L/qm<small>heute</small></span>':'');
-  var tiles="";
-  for(var k=0;k<3&&k<d.time.length;k++){
-    var code=d.weather_code[k], w=wmo(code,1), a=dayAgg(k), dt=new Date(d.time[k]+"T12:00:00");
-    var nm=k===0?"heute":k===1?"morgen":DAYN[dt.getDay()];
-    var ss=d.sunshine_duration?Math.round(d.sunshine_duration[k]/3600):null, pop=d.precipitation_probability_max[k], mm=d.precipitation_sum[k];
-    tiles+='<button type="button" class="dt '+skyClass(code)+'" data-hd="'+k+'" aria-label="'+nm+': '+esc(w[1])+', Details anzeigen">'+
-      '<span class="n">'+nm+'</span><span class="dd">'+d.time[k].slice(8,10)+'.'+d.time[k].slice(5,7)+'.</span>'+
-      '<span class="ic">'+w[0]+'</span>'+
-      '<span class="tt tn" style="color:'+tcol(d.temperature_2m_max[k])+'">'+r(d.temperature_2m_max[k])+'°</span>'+
-      '<span class="tl2 tn" style="color:'+tcol(d.temperature_2m_min[k])+'">'+r(d.temperature_2m_min[k])+'°</span>'+
-      '<span class="cx">'+esc(w[1])+'</span>'+
-      (ss!=null?'<span class="mt">'+svgI("sun")+ss+' h</span>':'')+
-      '<span class="mt" style="color:var(--a-rain)">'+svgI("drop")+r(pop)+' %</span>'+
-      '<span class="mt" style="color:var(--a-rain)">'+(mm>=0.1?fmtL(mm)+' L/qm':'0 L/qm')+'</span>'+
-      '<span class="mt">'+windRose(a.dir,18,a.ws)+r(a.ws)+' km/h</span></button>';
-  }
   return '<section class="card full wk"><div class="hz '+skyClass(h.weather_code[i0])+'">'+
     '<div class="hd"><b>Wincheringen-Mont</b><span class="st'+(old?' old':'')+'">'+esc(stamp)+'</span></div>'+
     '<div class="bg2"><div class="tmp tn" style="color:'+tcol(t)+'">'+num1(t)+'<small>°C</small></div>'+
     '<div class="cw"><div class="e">'+w0[0]+'</div><div class="n">'+esc(w0[1])+'</div></div></div>'+
     '<div class="chips">'+chips+'</div></div>'+
-    '<div class="d3">'+tiles+'</div>'+
-    '<div class="wkh">Oberes Drittel einer Kachel: stündlicher Verlauf ab 6 Uhr · Rest der Kachel: Tagesvorhersage</div></section>';
+    '</section>';
 }
 
 function stripHtml(slots){
   return '<div class="strip">'+slots.map(function(o){
     var past=o.s<0, w=past?null:wmo(o.code,o.day);
-    var mm=(o.mm!=null&&o.mm>=0.05)?fmtL(o.mm)+' L/qm':'';
+    var mm=(o.mm!=null&&o.mm>=0.05)?'<span>'+fmtL(o.mm)+'</span><span class="u">L/qm</span>':'';
     var wind=o.ws!=null?'<div class="hw">'+(o.dir!=null?windRose(o.dir,20,o.ws):'')+'<span>'+r(o.ws)+'</span></div>':'<div class="hw"></div>';
     return '<div class="hc'+(past?' past':'')+(o.s===0?' now':'')+'"><div class="hh">'+(o.s===0?'Jetzt':o.hr+' Uhr')+'</div>'+
       '<div class="hi"'+(w?' title="'+esc(w[1])+'"':'')+'>'+(w?w[0]:'')+'</div>'+
@@ -886,60 +916,8 @@ function stripHtml(slots){
 
 function renderTop(){
   var root=$("hourly"); if(!root||!FC) return;
-  var S=buildSlots(), slots=S.slots, lo=S.lo, W=slots.length*COL;
-  topSlots=slots;
-  var sc0=document.querySelector("#hourly .tl"), keep=sc0?sc0.scrollLeft:null;
-
-  var dayrow='<div class="dayrow">', starts=[];
-  slots.forEach(function(o,i){ if(i===0||o.hr===0) starts.push(i); });
-  starts.forEach(function(st,k){
-    var len=(k+1<starts.length?starts[k+1]:slots.length)-st;
-    dayrow+='<div class="dseg" style="width:'+(len*COL)+'px">'+(len>=3?'<span>'+esc(dayWordFor(slots[st].date,S.today))+'</span>':'')+'</div>';
-  });
-  dayrow+='</div>';
-
-  var strip=stripHtml(slots);
-
-  var hint=lo<0?'← Messwerte der Station (24 Stunden) · Vorhersage (3 Tage) →':'Vorhersage für 3 Tage →';
-  var note=lo<0?'Nach links wischen: Messwerte der Station (bis zu 24 Stunden). Nach rechts: stündliche Vorhersage für 3 Tage.':
-    'Nach rechts wischen: stündliche Vorhersage für 3 Tage. Die Messwerte der Station sind gerade nicht verfügbar.';
-  root.innerHTML='<div class="ol">'+heroHtml()+
-    '<section class="card full tp"><h2>Verlauf und Vorhersage</h2>'+
-    '<div class="tl"><div class="in" style="width:'+W+'px">'+dayrow+strip+'</div></div>'+
-    '<div class="olnote">'+hint+'</div>'+
-    '<details class="lgd"'+(LGOPEN?' open':'')+'><summary>Legende</summary>'+
-    '<div class="olnote lg">Regenmenge je Stunde: <b class="m1">gemessen</b> · <b class="m2">vorhergesagt</b>. Windpfeil: zeigt, wohin der Wind weht; Farbe von schwarz (schwach) bis rot (stark); Zahl in km/h.</div>'+
-    '<div class="olnote">'+note+'</div></details></section></div>';
-
-  var sc=document.querySelector("#hourly .tl");
-  if(sc){
-    if(keep===null) sc.scrollLeft=Math.max(0,(-lo-2)*COL);
-    else sc.scrollLeft=Math.max(0,keep+(topLo-lo)*COL);
-  }
-  topLo=lo;
+  root.innerHTML='<div class="ol">'+heroHtml()+'</div>';
 }
-$("hourly").addEventListener("toggle",function(e){ if(e.target.classList&&e.target.classList.contains("lgd")) LGOPEN=e.target.open; },true);
-function stripTo(k){
-  var sc=document.querySelector("#hourly .tl"), tp=document.querySelector("#hourly .tp");
-  if(!sc||!topSlots) return;
-  var x=0;   // bei k>0: +6 gleicht den Innenabstand der Leiste aus
-  if(k===0) x=Math.max(0,(-topLo-2)*COL);   // zurück zur Ausgangsstellung "Jetzt"
-  else{
-    var date=FC.d.time[k];
-    for(var i=0;i<topSlots.length;i++){ if(topSlots[i].date===date&&topSlots[i].hr===6){ x=i*COL+6; break; } }
-  }
-  sc.scrollTo({left:x,behavior:"smooth"});
-  if(tp&&tp.scrollIntoView) tp.scrollIntoView({behavior:"smooth",block:"nearest"});
-}
-$("hourly").addEventListener("click",function(e){
-  var b=e.target.closest?e.target.closest("[data-hd]"):null; if(!b||!FC) return;
-  var k=+b.getAttribute("data-hd"), rect=b.getBoundingClientRect();
-  // oberes Drittel (nur bei Maus/Touch): Stundenverlauf einstellen; sonst (auch per Tastatur): zur Tagesvorhersage springen
-  if(e.detail>0 && (e.clientY-rect.top)<rect.height/3){ stripTo(k); return; }
-  selD=k; selP=0; fcRender();
-  var f=document.querySelector("#ol-day .tp")||document.querySelector("#outlook .fc"); if(f&&f.scrollIntoView) f.scrollIntoView({behavior:"smooth",block:"start"});
-});
-
 function fromSeries(rows){
   var by={}, hours=[];
   rows.forEach(function(x){var k=Math.floor(x.t/3600)*3600;(by[k]=by[k]||[]).push(x)});
@@ -948,14 +926,14 @@ function fromSeries(rows){
   return {hours:hours,latest:l?{ts:l.t,temp:l.temp,hum:l.hum,press:l.press,wind:l.wind,gust:l.gust,dir:null,rain:null}:null};
 }
 function loadArchive(){
-  function done(){lastArc=Date.now();renderTop()}
+  function done(){lastArc=Date.now();renderTop();fcRender()}
   function ok(x){if(!x.ok)throw new Error(x.status);return x.json()}
   fetch(ARCH+"/api/hourly?hours=24").then(ok).then(function(j){
     if(!j||!j.rows) throw new Error("kein hourly");
     ARC={hours:j.rows,latest:j.latest||null}; done();
   }).catch(function(){
     fetch(ARCH+"/api/series?range=24h").then(ok).then(function(j){ARC=fromSeries((j&&j.rows)||[]);done()})
-     .catch(function(){ if(ARC===null){ARC={hours:[],latest:null};renderTop();} });
+     .catch(function(){ if(ARC===null){ARC={hours:[],latest:null};renderTop();fcRender();} });
   });
 }
 loadArchive(); setInterval(loadArchive,10*60*1000);
@@ -1044,35 +1022,6 @@ function loadLong(){
 }
 loadLong(); setInterval(loadLong,30*60*1000);
 (function(){var tm=null;window.addEventListener("resize",function(){clearTimeout(tm);tm=setTimeout(renderLong,200)})})();
-
-
-/* ---------- Stundenvorhersage für den gewählten Tag (zwischen Radar und 7-Tage-Vorhersage) ---------- */
-var dsDate=null;
-function renderDayStrip(){
-  var box=$("ol-day"); if(!box||!FC) return;
-  var h=FC.h, d=FC.d, k=selD, date=d.time[k], ix=idxFor(date,0,24);
-  if(k===0) ix=ix.filter(function(i){return i>=FC.i0});
-  if(!ix.length){ box.innerHTML=""; return; }
-  var sc0=document.querySelector("#ol-day .tl"), keep=(sc0&&dsDate===date)?sc0.scrollLeft:null;
-  var slots=ix.map(function(i){
-    return {s:i-FC.i0,date:date,hr:+h.time[i].slice(11,13),t:h.temperature_2m[i],mm:h.precipitation[i],ws:h.wind_speed_10m[i],dir:h.wind_direction_10m[i],pop:h.precipitation_probability[i],code:h.weather_code[i],day:h.is_day[i]};
-  });
-  var dow=new Date(date+"T12:00:00").getDay(), nm=k===0?"heute":k===1?"morgen":DAYN[dow];
-  var title=nm+" "+date.slice(8,10)+"."+date.slice(5,7)+".";
-  box.innerHTML='<section class="card full tp"><h2>Stundenvorhersage · '+esc(title)+'</h2>'+
-    '<div class="tl"><div class="in" style="width:'+(slots.length*COL)+'px">'+stripHtml(slots)+'</div></div>'+
-    '<div class="olnote">Für den oben gewählten Tag (Tageskachel oder Reiter). Regenmenge in L/qm, Windpfeil wie im Verlauf oben.</div></section>';
-  var sc=document.querySelector("#ol-day .tl");
-  if(sc){
-    if(keep!==null) sc.scrollLeft=keep;
-    else{
-      var x=0;
-      if(k>0){ for(var q=0;q<slots.length;q++){ if(slots[q].hr===6){ x=q*COL+6; break; } } }
-      sc.scrollLeft=x;
-    }
-  }
-  dsDate=date;
-}
 
 
 /* ---------- Modellprognose für den Niederschlag auf der Karte (Open-Meteo-Raster, stündlich, 3 Tage) ---------- */
