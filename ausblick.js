@@ -713,8 +713,8 @@ function fcRender(){
   var ptabs=P.map(function(a,i){
     var w=periodWx(a);
     return '<button type="button" role="tab" class="ptab'+(i===selP?' on':'')+'" data-p="'+i+'" aria-selected="'+(i===selP)+'" title="'+esc(w[1])+'">'+
-      '<span class="pn">'+a.name+'</span><span class="pt tn" style="color:'+tcol(a.t)+'">'+r(a.t)+'°</span><span class="pi">'+w[0]+'</span>'+
-      '<span class="pw">'+(a.ws>=1?windRose(a.dir,18,a.ws)+'<b>'+r(a.ws)+'</b>'+gustHtml(a.gust):'')+'</span><span class="pp">'+drop+r(a.pop)+' %</span><span class="pd">'+dropsHtml(a.mm,'period')+'</span><span class="pq">'+(a.mm>=0.1?fmtL(a.mm):'0')+' L/qm</span></button>';
+      '<span class="pn">'+a.name+'</span><span class="pt tn" style="color:'+tcol(a.t)+'">'+r(a.t)+'°</span><span class="pi">'+w[0]+'</span><span class="pd">'+dropsHtml(a.mm,'period')+'</span>'+
+      '<span class="pw">'+(a.ws>=1?windRose(a.dir,18,a.ws)+'<b>'+r(a.ws)+'</b>'+gustHtml(a.gust):'')+'</span><span class="pp">'+drop+r(a.pop)+' %</span><span class="pq">'+(a.mm>=0.1?fmtL(a.mm):'0')+' L/qm</span></button>';
   }).join("");
 
   var dtabs=d.time.map(function(t,k){
@@ -726,8 +726,8 @@ function fcRender(){
     return '<button type="button" role="tab" class="dtab'+(k===selD?' on':'')+'" data-d="'+k+'" aria-selected="'+(k===selD)+'" title="'+esc(w[1])+'">'+
       '<span class="dth"><b>'+nm+'</b>'+date+'</span><span class="dbd">'+
       '<span class="hi tn" style="color:'+tcol(hi)+'">'+r(hi)+'°</span><span class="lo tn" style="color:'+tcol(lo)+'">'+r(lo)+'°</span>'+
-      '<span class="di">'+w[0]+'</span><span class="dw">'+windRose(da.dir,18,da.ws)+'<b>'+r(da.ws)+'</b>'+gustHtml(d.wind_gusts_10m_max[k])+'</span>'+
-      '<span class="dm">'+(ss!=null?svg("sun",14)+ss+' h':'')+'</span><span class="dm rn">'+drop+r(pr)+' %</span><span class="dm rn">'+dropsHtml(d.precipitation_sum[k],'day')+'</span><span class="dm rn">'+(d.precipitation_sum[k]>=0.1?fmtL(d.precipitation_sum[k]):'0')+' L/qm</span></span></button>';
+      '<span class="di">'+w[0]+'</span><span class="dd2">'+dropsHtml(d.precipitation_sum[k],'day')+'</span><span class="dw">'+windRose(da.dir,18,da.ws)+'<b>'+r(da.ws)+'</b>'+gustHtml(d.wind_gusts_10m_max[k])+'</span>'+
+      '<span class="dm">'+(ss!=null?svg("sun",14)+ss+' h':'')+'</span><span class="dm rn">'+drop+r(pr)+' %</span><span class="dm rn">'+(d.precipitation_sum[k]>=0.1?fmtL(d.precipitation_sum[k]):'0')+' L/qm</span></span></button>';
   }).join("");
 
   // Stundenleiste ab Beginn des gewählten Abschnitts
@@ -874,8 +874,10 @@ var TOPCSS=`
 .dps .dp{fill:currentColor;opacity:.18}
 .dps .dp.on{opacity:1}
 .fc .pd{display:flex;justify-content:center;min-height:13px;color:var(--a-rain)}
-.tp .hm .dps{min-height:9px;gap:0;margin-bottom:1px}
-.tp .hm{font-size:11px;font-weight:700;min-height:36px;white-space:nowrap;display:flex;flex-direction:column;align-items:center;line-height:1.1}
+.tp .hdp{display:flex;justify-content:center;min-height:10px;margin-top:-2px}
+.tp .hdp .dps{min-height:9px;gap:0}
+.fc .dd2{display:flex;justify-content:center;min-height:13px;color:var(--a-rain);margin-top:-2px}
+.tp .hm{font-size:11px;font-weight:700;min-height:26px;white-space:nowrap;display:flex;flex-direction:column;align-items:center;line-height:1.1}
 .tp .hm .u{font-size:9px;font-weight:600;opacity:.9}
 .tp .m1{color:var(--a-rain)}
 .tp .m2{color:var(--a-ext)}
@@ -958,9 +960,10 @@ function stripHtml(slots){
     var wind=o.ws!=null?'<div class="hw">'+(o.dir!=null?windRose(o.dir,20,o.ws):'')+'<span>'+r(o.ws)+(o.gust!=null?' <i class="gs'+(o.gust>=60?' hot':'')+'">('+r(o.gust)+')</i>':'')+'</span></div>':'<div class="hw"></div>';
     return '<div class="hc'+(past?' past':'')+(o.s===0?' now':'')+'"><div class="hh">'+(o.s===0?'Jetzt':o.hr+' Uhr')+'</div>'+
       '<div class="hi"'+(w?' title="'+esc(w[1])+'"':'')+'>'+(w?w[0]:'')+'</div>'+
+      '<div class="hdp '+(past?'m1':'m2')+'">'+dropsHtml(o.mm,'hour',6)+'</div>'+
       '<div class="ht tn"'+(o.t!=null?' style="color:'+tcol(o.t)+'"':'')+'>'+(o.t!=null?r(o.t)+'°':'–')+'</div>'+
       '<div class="hp">'+(past?'':(o.pop>=10?o.pop+' %':''))+'</div>'+
-      '<div class="hm '+(past?'m1':'m2')+'">'+dropsHtml(o.mm,'hour',6)+mm+'</div>'+wind+'</div>';
+      '<div class="hm '+(past?'m1':'m2')+'">'+mm+'</div>'+wind+'</div>';
   }).join("")+'</div>';
 }
 
