@@ -405,9 +405,11 @@ var FCCSS=`
 .fc .pi{font-size:32px;line-height:1.2}
 .fc .pw,.fc .dw{height:20px;color:var(--a-ink2);display:flex;align-items:center;gap:3px;font-size:12px}
 .fc .pw b,.fc .dw b{font-weight:600}
+.fc .gs{font-weight:500;font-size:11.5px;color:var(--a-mute)}
+.gs.hot,.fc .gs.hot{color:var(--crit,#c23a3a);font-weight:700}
 .fc .pp{display:inline-flex;align-items:center;gap:3px;font-size:13px;font-weight:700;color:var(--a-rain)}
 .fc .pp svg{width:13px;height:13px}
-.fc .dtabs{margin-top:8px}
+.fc .dtabs{margin-top:14px}
 .fc .ptabs{margin-top:14px}
 .fc .stt{font-size:13.5px;font-weight:700;color:var(--a-ink2);margin:14px 0 2px}
 .fc .lgd .tl{margin-top:6px}
@@ -527,9 +529,36 @@ function agg(ix){
     t:mean(col("temperature_2m")), pop:maxOf(col("precipitation_probability")), mm:sum(col("precipitation")),
     code:repCode(ix), day:mean(col("is_day"))>=0.5?1:0,
     ws:mean(ws), dir:dirMean(col("wind_direction_10m"),ws), gust:maxOf(col("wind_gusts_10m")),
-    rh:mean(col("relative_humidity_2m")), dew:mean(col("dew_point_2m")), pres:mean(col("pressure_msl")), cc:mean(col("cloud_cover"))
+    rh:mean(col("relative_humidity_2m")), dew:mean(col("dew_point_2m")), pres:mean(col("pressure_msl")), cc:mean(col("cloud_cover")),
+    th:ix.some(function(i){ return h.weather_code[i]>=95&&(h.precipitation[i]||0)>=0.1; }),
+    sn:ix.some(function(i){ return !!SNOWC[h.weather_code[i]]&&(h.precipitation[i]||0)>=0.1; }),
+    fg:ix.length>0&&ix.filter(function(i){ return h.weather_code[i]===45||h.weather_code[i]===48; }).length>=Math.ceil(ix.length/2)
   };
 }
+// Wettersymbol aus Menge, Bewölkung und Wetterart (nicht nur aus dem Wettercode, der schon bei Spuren von Regen "Regen" meldet)
+function skyEmoji(cc,day){
+  if(day) return cc<15?"☀️":cc<40?"🌤️":cc<65?"⛅":cc<88?"🌥️":"☁️";
+  return cc<30?"🌙":"☁️";
+}
+function wxIcon(o){
+  var T=o.scope==="hour"?{rel:0.1,lo:0.5,hi:2.5}:o.scope==="period"?{rel:0.2,lo:1,hi:5}:{rel:0.3,lo:1,hi:8};
+  var mm=o.mm||0, cc=(o.cc==null?50:o.cc), day=!!o.day;
+  if(mm>=T.rel){
+    if(o.th) return ["⛈️","Gewitter","storm"];
+    if(o.sn) return ["🌨️",mm<T.lo?"leichter Schneefall":"Schneefall","snow"];
+    if(mm<T.lo) return [(day&&cc<70)?"🌦️":"🌧️","leichter Regen","rain"];
+    if(mm<T.hi) return ["🌧️","Regen","rain"];
+    return ["🌧️","kräftiger Regen","rain"];
+  }
+  if(o.fg) return ["🌫️","Nebel","fog"];
+  return [skyEmoji(cc,day),skyWord(cc,day),cc<40?"clear":"cloud"];
+}
+function periodWx(a){ return wxIcon({scope:"period",mm:a.mm,cc:a.cc,day:a.day,th:a.th,sn:a.sn,fg:a.fg}); }
+function dayWx(k){
+  var d=FC.d, A=agg(idxFor(d.time[k],0,24)), D=dayAgg(k);
+  return wxIcon({scope:"day",mm:d.precipitation_sum[k],cc:D.cc,day:1,th:A.th,sn:A.sn,fg:A.fg});
+}
+function gustHtml(g,ws){ return (g!=null&&g>=1)?'<span class="gs'+(g>=60?' hot':'')+'">('+r(g)+')</span>':''; }
 function dayWord(att){var d0=FC.now.slice(0,10);return att===d0?"heute":att===addDay(d0,1)?"morgen":DAYN[new Date(att+"T12:00:00").getDay()]}
 function nightTag(date){return "zum "+DAYN[new Date(date+"T12:00:00").getDay()]}
 var TABS=[[1,0],[2,0],[3,0],[0,1]];   // [Index in PARTS, Tagesversatz]: Vormittag, Nachmittag, Abend, Nacht (zum Folgetag)
@@ -603,7 +632,7 @@ function dayDetail(k){
   var nextNight=idxFor(addDay(date,1),0,6);
   var rainIx=k===0?keep(idxFor(date,0,24)).concat(nextNight):idxFor(date,6,24).concat(nextNight);
   var code=d.weather_code[k], dow=new Date(date+"T12:00:00").getDay();
-  var lab=(code>=51&&d.precipitation_probability_max[k]>=40&&d.precipitation_sum[k]>=0.5)?lc(wmo(code,1)[1]):(code===45||code===48)?"neblig":skyWord(a.cc,a.day||1);
+  var lab=dayWx(k)[1];
   var nm=k===0?"heute":k===1?"morgen":DAYN[dow];
   var uv=d.uv_index_max?d.uv_index_max[k]:null;
   var ss=d.sunshine_duration?Math.round(d.sunshine_duration[k]/3600):null;
@@ -618,7 +647,7 @@ function dayDetail(k){
   return html;
 }
 function periodDetail(a){
-  var w=wmo(a.code,a.day), lab=(a.mm>=0.3&&a.pop>=40)?lc(w[1]):skyWord(a.cc,a.day);
+  var lab=periodWx(a)[1];
   var wet=a.pop>=10||a.mm>=0.1;
   return head("p",a.name+(a.tag?' '+a.tag:'')+' — '+esc(lab))+
     item(ico("drop"),"Niederschlag",wet?r(a.pop)+" %"+(a.mm>=0.1?" · "+fmtL(a.mm)+" L/qm":""):"trocken")+
@@ -640,9 +669,9 @@ function fcSlots(k,p){
   var nowH=Math.floor(Date.now()/3600000)*3600, ah={}, out=[];
   if(ARC) ARC.hours.forEach(function(r){ ah[r.t]=r; });
   for(var i=i1;i<Math.min(i1+AHEAD,h.time.length);i++){
-    var s=i-FC.i0, o={s:s,date:h.time[i].slice(0,10),hr:+h.time[i].slice(11,13),t:null,mm:null,ws:null,dir:null,pop:null,code:null,day:h.is_day[i]};
-    if(s>=0){ o.t=h.temperature_2m[i]; o.mm=h.precipitation[i]; o.ws=h.wind_speed_10m[i]; o.dir=h.wind_direction_10m[i]; o.pop=h.precipitation_probability[i]; o.code=h.weather_code[i]; }
-    else{ var rw=ah[nowH+s*3600]; if(rw){ o.t=rw.temp; o.mm=rw.mm; o.ws=rw.wind; o.dir=rw.dir; } }
+    var s=i-FC.i0, o={s:s,date:h.time[i].slice(0,10),hr:+h.time[i].slice(11,13),t:null,mm:null,ws:null,dir:null,pop:null,code:null,gust:null,cc:null,day:h.is_day[i]};
+    if(s>=0){ o.t=h.temperature_2m[i]; o.mm=h.precipitation[i]; o.ws=h.wind_speed_10m[i]; o.dir=h.wind_direction_10m[i]; o.gust=h.wind_gusts_10m[i]; o.cc=h.cloud_cover[i]; o.pop=h.precipitation_probability[i]; o.code=h.weather_code[i]; }
+    else{ var rw=ah[nowH+s*3600]; if(rw){ o.t=rw.temp; o.mm=rw.mm; o.ws=rw.wind; o.dir=rw.dir; o.gust=rw.gust; } }
     out.push(o);
   }
   return out;
@@ -672,14 +701,14 @@ function fcRender(){
   var drop='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+IC.drop+'</svg>';
 
   var ptabs=P.map(function(a,i){
-    var w=wmo(a.code,a.day);
+    var w=periodWx(a);
     return '<button type="button" role="tab" class="ptab'+(i===selP?' on':'')+'" data-p="'+i+'" aria-selected="'+(i===selP)+'" title="'+esc(w[1])+'">'+
       '<span class="pn">'+a.name+'</span><span class="pt tn" style="color:'+tcol(a.t)+'">'+r(a.t)+'°</span><span class="pi">'+w[0]+'</span>'+
-      '<span class="pw">'+(a.ws>=1?windRose(a.dir,18,a.ws)+'<b>'+r(a.ws)+'</b>':'')+'</span><span class="pp">'+drop+r(a.pop)+' %</span><span class="pq">'+(a.mm>=0.1?fmtL(a.mm):'0')+' L/qm</span></button>';
+      '<span class="pw">'+(a.ws>=1?windRose(a.dir,18,a.ws)+'<b>'+r(a.ws)+'</b>'+gustHtml(a.gust):'')+'</span><span class="pp">'+drop+r(a.pop)+' %</span><span class="pq">'+(a.mm>=0.1?fmtL(a.mm):'0')+' L/qm</span></button>';
   }).join("");
 
   var dtabs=d.time.map(function(t,k){
-    var dt=new Date(t+"T12:00:00"), w=wmo(d.weather_code[k],1), hi=d.temperature_2m_max[k], lo=d.temperature_2m_min[k];
+    var dt=new Date(t+"T12:00:00"), w=dayWx(k), hi=d.temperature_2m_max[k], lo=d.temperature_2m_min[k];
     var nm=k===0?"heute":k===1?"morgen":DAYN[dt.getDay()];
     var date=t.slice(8,10)+"."+t.slice(5,7)+".", da=dayAgg(k);
     var ss=d.sunshine_duration?Math.round(d.sunshine_duration[k]/3600):null;
@@ -687,7 +716,7 @@ function fcRender(){
     return '<button type="button" role="tab" class="dtab'+(k===selD?' on':'')+'" data-d="'+k+'" aria-selected="'+(k===selD)+'" title="'+esc(w[1])+'">'+
       '<span class="dth"><b>'+nm+'</b>'+date+'</span><span class="dbd">'+
       '<span class="hi tn" style="color:'+tcol(hi)+'">'+r(hi)+'°</span><span class="lo tn" style="color:'+tcol(lo)+'">'+r(lo)+'°</span>'+
-      '<span class="di">'+w[0]+'</span><span class="dw">'+windRose(da.dir,18,da.ws)+'<b>'+r(da.ws)+'</b></span>'+
+      '<span class="di">'+w[0]+'</span><span class="dw">'+windRose(da.dir,18,da.ws)+'<b>'+r(da.ws)+'</b>'+gustHtml(d.wind_gusts_10m_max[k])+'</span>'+
       '<span class="dm">'+(ss!=null?svg("sun",14)+ss+' h':'')+'</span><span class="dm rn">'+drop+r(pr)+' %</span><span class="dm rn">'+(d.precipitation_sum[k]>=0.1?fmtL(d.precipitation_sum[k]):'0')+' L/qm</span></span></button>';
   }).join("");
 
@@ -698,17 +727,17 @@ function fcRender(){
     stHtml='<div class="stt">Stündlich ab '+esc(dayWordFor(st.date,today))+', '+pad2(st.hr)+' Uhr</div>'+
       '<div class="tl" data-key="'+key+'"><div class="in" style="width:'+(slots.length*COL)+'px">'+dayrowHtml(slots)+stripHtml(slots)+'</div></div>'+
       '<details class="lgd"'+(LGOPEN?' open':'')+'><summary>Legende</summary>'+
-      '<div class="olnote lg">Regenmenge je Stunde: <b class="m1">gemessen</b> · <b class="m2">vorhergesagt</b> (L/qm). Windpfeil: zeigt, wohin der Wind weht; Farbe von schwarz (schwach) bis rot (stark); Zahl in km/h. Bereits vergangene Stunden zeigen die Messwerte der Station.</div></details>';
+      '<div class="olnote lg">Regenmenge je Stunde: <b class="m1">gemessen</b> · <b class="m2">vorhergesagt</b> (L/qm). Windpfeil: zeigt, wohin der Wind weht; Farbe von schwarz (schwach) bis rot (stark). Zahl = mittlerer Wind in km/h, in Klammern die Böen in km/h. Bereits vergangene Stunden zeigen die Messwerte der Station.</div></details>';
   }
 
   fcHtml='<section class="card full fc tp"><h2>Vorhersage%CHIP%</h2>'+
+    '<div class="ddet">'+dayDetail(selD)+'</div>'+
     '<div class="dtabs" role="tablist" aria-label="Tage">'+dtabs+'</div>'+
     '<div class="ptabs" role="tablist" aria-label="Tagesabschnitte" style="--np:'+Math.max(P.length,1)+'">'+ptabs+'</div>'+
     stHtml+
     (P.length?periodDetail(P[selP]):'')+
-    '<div class="ddet">'+dayDetail(selD)+'</div>'+
     m24Html()+
-    '<div class="olnote">Modellvorhersage für Wincheringen · Open-Meteo · Warnungen: DWD über Brightsky</div></section>';
+    '<div class="olnote">Modellvorhersage für Wincheringen · Open-Meteo · Warnungen: DWD über Brightsky. Wind in km/h: mittlere Geschwindigkeit, in Klammern die Böen.</div></section>';
 
   var sc=document.querySelector("#outlook .dtabs"), left=sc?sc.scrollLeft:0;
   var tl0=document.querySelector("#outlook .fc > .tl"), keyOld=tl0?tl0.getAttribute("data-key"):null, leftOld=tl0?tl0.scrollLeft:0;
@@ -833,6 +862,8 @@ var TOPCSS=`
 .tp .hm .u{font-size:9px;font-weight:600;opacity:.9}
 .tp .m1{color:var(--a-rain)}
 .tp .m2{color:var(--a-ext)}
+.tp .hw .gs{font-style:normal;font-weight:500;color:var(--a-mute)}
+.tp .hw .gs.hot{color:var(--crit,#c23a3a);font-weight:700}
 .tp .hw{display:flex;flex-direction:column;align-items:center;gap:1px;min-height:36px;font-size:11px;font-weight:600;color:var(--a-ink2);margin-top:4px}
 .tp .lg b{font-weight:700}
 .tp details.lgd{margin-top:6px}
@@ -873,7 +904,7 @@ function buildSlots(){
       if(i<h.time.length){ o.t=h.temperature_2m[i]; o.mm=h.precipitation[i]; o.ws=h.wind_speed_10m[i]; o.dir=h.wind_direction_10m[i]; o.pop=h.precipitation_probability[i]; o.code=h.weather_code[i]; o.day=h.is_day[i]; }
     } else {
       var rw=ah[ep];
-      if(rw){ o.t=rw.temp; o.mm=rw.mm; o.ws=rw.wind; o.dir=rw.dir; }
+      if(rw){ o.t=rw.temp; o.mm=rw.mm; o.ws=rw.wind; o.dir=rw.dir; o.gust=rw.gust; }
     }
     slots.push(o);
   }
@@ -882,7 +913,9 @@ function buildSlots(){
 
 function heroHtml(){
   var h=FC.h, d=FC.d, i0=FC.i0, L=ARC&&ARC.latest, st=!!(L&&L.temp!=null);
-  var t=st?L.temp:h.temperature_2m[i0], w0=wmo(h.weather_code[i0],h.is_day[i0]);
+  var t=st?L.temp:h.temperature_2m[i0], c0=h.weather_code[i0];
+  var mm0=(st&&L.rainrate!=null)?(L.rainrate>0.05?Math.max(L.rainrate,0.1):0):h.precipitation[i0];   // Messung der Station vor Modell
+  var w0=wxIcon({scope:"hour",mm:mm0,cc:h.cloud_cover[i0],day:h.is_day[i0],th:c0>=95,sn:!!SNOWC[c0],fg:c0===45||c0===48});
   var hum=st&&L.hum!=null?L.hum:h.relative_humidity_2m[i0], pr=st&&L.press!=null?L.press:h.pressure_msl[i0];
   var ws=st&&L.wind!=null?L.wind:h.wind_speed_10m[i0], gu=st&&L.gust!=null?L.gust:h.wind_gusts_10m[i0], wd=st&&L.dir!=null?L.dir:h.wind_direction_10m[i0];
   var stamp, old=false;
@@ -893,7 +926,7 @@ function heroHtml(){
     '<span class="c2">'+svgI("gauge")+r(pr)+' hPa</span>'+
     '<span class="c2">'+windRose(wd,18,ws)+r(ws)+' km/h<small>Böen '+r(gu)+'</small></span>'+
     (st&&L.rain!=null?'<span class="c2">'+svgI("drop")+fmtL(L.rain)+' L/qm<small>heute</small></span>':'');
-  return '<section class="card full wk"><div class="hz '+skyClass(h.weather_code[i0])+'">'+
+  return '<section class="card full wk"><div class="hz sk-'+w0[2]+'">'+
     '<div class="hd"><b>Wincheringen-Mont</b><span class="st'+(old?' old':'')+'">'+esc(stamp)+'</span></div>'+
     '<div class="bg2"><div class="tmp tn" style="color:'+tcol(t)+'">'+num1(t)+'<small>°C</small></div>'+
     '<div class="cw"><div class="e">'+w0[0]+'</div><div class="n">'+esc(w0[1])+'</div></div></div>'+
@@ -903,9 +936,9 @@ function heroHtml(){
 
 function stripHtml(slots){
   return '<div class="strip">'+slots.map(function(o){
-    var past=o.s<0, w=past?null:wmo(o.code,o.day);
+    var past=o.s<0, w=past?null:wxIcon({scope:"hour",mm:o.mm,cc:o.cc,day:o.day,th:o.code>=95,sn:!!SNOWC[o.code],fg:o.code===45||o.code===48});
     var mm=(o.mm!=null&&o.mm>=0.05)?'<span>'+fmtL(o.mm)+'</span><span class="u">L/qm</span>':'';
-    var wind=o.ws!=null?'<div class="hw">'+(o.dir!=null?windRose(o.dir,20,o.ws):'')+'<span>'+r(o.ws)+'</span></div>':'<div class="hw"></div>';
+    var wind=o.ws!=null?'<div class="hw">'+(o.dir!=null?windRose(o.dir,20,o.ws):'')+'<span>'+r(o.ws)+(o.gust!=null?' <i class="gs'+(o.gust>=60?' hot':'')+'">('+r(o.gust)+')</i>':'')+'</span></div>':'<div class="hw"></div>';
     return '<div class="hc'+(past?' past':'')+(o.s===0?' now':'')+'"><div class="hh">'+(o.s===0?'Jetzt':o.hr+' Uhr')+'</div>'+
       '<div class="hi"'+(w?' title="'+esc(w[1])+'"':'')+'>'+(w?w[0]:'')+'</div>'+
       '<div class="ht tn"'+(o.t!=null?' style="color:'+tcol(o.t)+'"':'')+'>'+(o.t!=null?r(o.t)+'°':'–')+'</div>'+
