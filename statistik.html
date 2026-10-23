@@ -43,9 +43,9 @@
 :root{
   --text-muted:var(--mute); --border:var(--line); --f-body:var(--body);
   --accent-temp:#d9692f; --accent-dew:var(--c-hum); --accent-press:var(--c-press);
-  --accent-solar:var(--c-sun); --accent-wind:var(--c-wind); --accent-gust:var(--c-gust); --accent-rain:var(--c-rain);
+  --accent-solar:var(--c-sun); --accent-wind:var(--c-wind); --accent-gust:var(--crit); --accent-rain:var(--c-rain);
 }
-@media (prefers-color-scheme: dark){ :root{ --accent-temp:#ec8a55; } }
+@media (prefers-color-scheme: dark){ :root{ --accent-temp:#ec8a55; --accent-gust:#f06a6a; } }
 *{box-sizing:border-box}
 html{height:100%}
 body{margin:0;min-height:100%;background:var(--bg);color:var(--ink);font-family:var(--body);font-size:16px;line-height:1.4;
