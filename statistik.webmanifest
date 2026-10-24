@@ -1,0 +1,30 @@
+{
+  "id": "statistik.html",
+  "name": "Wetter Mont – Statistik",
+  "short_name": "Statistik",
+  "start_url": "statistik.html",
+  "scope": "./",
+  "display": "browser",
+  "background_color": "#1f4c78",
+  "theme_color": "#1f4c78",
+  "icons": [
+    {
+      "src": "icons/statistik-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/statistik-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/statistik-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

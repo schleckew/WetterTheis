@@ -1,0 +1,30 @@
+{
+  "id": "index.html",
+  "name": "Wetter Mont – Detaildaten",
+  "short_name": "Detaildaten",
+  "start_url": "index.html",
+  "scope": "./",
+  "display": "browser",
+  "background_color": "#2f6b5a",
+  "theme_color": "#2f6b5a",
+  "icons": [
+    {
+      "src": "icons/detaildaten-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/detaildaten-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/detaildaten-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
