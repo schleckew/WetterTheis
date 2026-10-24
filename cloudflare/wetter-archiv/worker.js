@@ -23,13 +23,15 @@ const SCHEMA = [
      day TEXT PRIMARY KEY,
      temp_min REAL, temp_max REAL, temp_avg REAL, hum_avg REAL, press_avg REAL,
      wind_avg REAL, wind_max REAL, gust_max REAL, rain_mm REAL, solar_kwh REAL,
-     uv_max REAL, n INTEGER)`,
+     uv_max REAL, n INTEGER, rainrate_max REAL)`,
 ];
 
 let schemaReady = false;
 async function ensureSchema(env) {
   if (schemaReady) return;
   await env.DB.batch(SCHEMA.map((s) => env.DB.prepare(s)));
+  // Bestehende Datenbanken um die Spalte rainrate_max ergänzen (Fehler = Spalte gibt es schon)
+  try { await env.DB.prepare(`ALTER TABLE tageswerte ADD COLUMN rainrate_max REAL`).run(); } catch (_) {}
   schemaReady = true;
 }
 
@@ -75,26 +77,28 @@ async function collect(env) {
   const aggregate = env.DB.prepare(
     `INSERT INTO tageswerte
        (day, temp_min, temp_max, temp_avg, hum_avg, press_avg, wind_avg, wind_max,
-        gust_max, rain_mm, solar_kwh, uv_max, n)
+        gust_max, rain_mm, solar_kwh, uv_max, n, rainrate_max)
      SELECT day, MIN(temp), MAX(temp), AVG(temp), AVG(hum), AVG(press), AVG(wind), MAX(wind),
             MAX(gust), MAX(rain),
             AVG(solar) * ((MAX(ts) - MIN(ts) + 300) / 3600.0) / 1000.0,
-            MAX(uv), COUNT(*)
+            MAX(uv), COUNT(*), MAX(rainrate)
      FROM messwerte WHERE day = ? GROUP BY day
      ON CONFLICT(day) DO UPDATE SET
        temp_min = excluded.temp_min, temp_max = excluded.temp_max, temp_avg = excluded.temp_avg,
        hum_avg = excluded.hum_avg, press_avg = excluded.press_avg, wind_avg = excluded.wind_avg,
        wind_max = excluded.wind_max, gust_max = excluded.gust_max, rain_mm = excluded.rain_mm,
-       solar_kwh = excluded.solar_kwh, uv_max = excluded.uv_max, n = excluded.n`
+       solar_kwh = excluded.solar_kwh, uv_max = excluded.uv_max, n = excluded.n,
+       rainrate_max = excluded.rainrate_max`
   ).bind(day);
 
   // Die Station misst Extremwerte lückenlos – diese Werte haben Vorrang vor den 5-Minuten-Stichproben.
   const extremes = env.DB.prepare(
     `UPDATE tageswerte SET
        temp_min = COALESCE(?, temp_min), temp_max = COALESCE(?, temp_max),
-       gust_max = COALESCE(?, gust_max), uv_max = COALESCE(?, uv_max)
+       gust_max = COALESCE(?, gust_max), uv_max = COALESCE(?, uv_max),
+       rainrate_max = COALESCE(?, rainrate_max)
      WHERE day = ?`
-  ).bind(v(d.temp_min), v(d.temp_max), v(d.gustspeed_max), v(d.uv_max), day);
+  ).bind(v(d.temp_min), v(d.temp_max), v(d.gustspeed_max), v(d.uv_max), v(d.rainrate_max), day);
 
   await env.DB.batch([insert, aggregate, extremes]);
   return { ts, day, temp: v(c.temperature) };
@@ -173,6 +177,7 @@ export default {
         return json({ bucket: r.bucket, rows: results }, 200, "public, max-age=60");
       }
 
+      // rainrate_max: Tage aus der Zeit vor dieser Spalte bekommen den Höchstwert der 5-Minuten-Stichproben
       if (url.pathname === "/api/daily") {
         const from = DATE_RE.test(url.searchParams.get("from") || "") ? url.searchParams.get("from") : "1970-01-01";
         const to = DATE_RE.test(url.searchParams.get("to") || "") ? url.searchParams.get("to") : "9999-12-31";
@@ -180,7 +185,9 @@ export default {
           `SELECT day, ROUND(temp_min,1) AS temp_min, ROUND(temp_max,1) AS temp_max, ROUND(temp_avg,1) AS temp_avg,
                   ROUND(hum_avg,0) AS hum_avg, ROUND(press_avg,1) AS press_avg, ROUND(wind_avg,1) AS wind_avg,
                   ROUND(wind_max,1) AS wind_max, ROUND(gust_max,1) AS gust_max, ROUND(rain_mm,1) AS rain_mm,
-                  ROUND(solar_kwh,2) AS solar_kwh, ROUND(uv_max,1) AS uv_max, n
+                  ROUND(solar_kwh,2) AS solar_kwh, ROUND(uv_max,1) AS uv_max, n,
+                  ROUND(COALESCE(rainrate_max,
+                    (SELECT MAX(m.rainrate) FROM messwerte m WHERE m.day = tageswerte.day)),1) AS rainrate_max
            FROM tageswerte WHERE day >= ? AND day <= ? ORDER BY day`
         ).bind(from, to).all();
         return json({ rows: results }, 200, "public, max-age=300");

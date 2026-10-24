@@ -116,6 +116,23 @@ footer a{color:inherit}
 
   <!-- Jahresvergleich -->
   <section id="panelJ" role="tabpanel" aria-labelledby="tabJ" hidden>
+    <div class="grid" style="margin-bottom:22px">
+      <div class="card">
+        <h2>Jahre: Niederschlag und Temperatur</h2>
+        <div class="stat" id="yrStat"></div>
+        <div class="chartbox tall"><canvas id="cYears"></canvas></div>
+      </div>
+      <div class="card">
+        <h2>Jahre: Sonnenenergie (PV)</h2>
+        <div class="stat" id="sunStat"></div>
+        <div class="chartbox tall"><canvas id="cSun"></canvas></div>
+      </div>
+      <div class="card wide">
+        <h2>Jahre im Vergleich zum Mittel 1991–2020</h2>
+        <div class="stat" id="cmpStat"></div>
+        <div class="table-wrap"><table><thead><tr><th>Jahr</th><th>Niederschlag</th><th>Abw.</th><th>Ø Temperatur</th><th>Abw.</th><th>Sonnenenergie</th><th>Abw.</th><th>Quelle</th></tr></thead><tbody id="cmpBody"></tbody></table></div>
+      </div>
+    </div>
     <div class="bar">
       <div class="seg" id="metricSeg" aria-label="Messgröße"></div>
     </div>
@@ -142,6 +159,8 @@ footer a{color:inherit}
     Daten: <a href="https://www.awekas.at/" target="_blank" rel="noopener" style="color:inherit">AWEKAS</a>, Station Wincheringen-Mont (ID 24938).
     Das Archiv speichert alle 5 Minuten einen Messwert. Sonnenenergie ist aus diesen Stichproben berechnet und daher eine Näherung.
     Tage mit Lücken in der Aufzeichnung können zu niedrige Summen zeigen.
+    Jahreswerte vor Beginn des Archivs und an Tagen mit zu wenigen Messungen: Modelldaten (ERA5) von
+    <a href="https://open-meteo.com/" target="_blank" rel="noopener" style="color:inherit">Open-Meteo</a> für Wincheringen, keine Stationsmessung.
   </footer>
 </div>
 
@@ -257,7 +276,6 @@ footer a{color:inherit}
 
   function renderRain(d, rows, ts, tick, title, stat){
     var col = css("--accent-rain"), o = baseOptions(false);
-    var seg = $("rainSeg"); if (seg) seg.hidden = state.range !== "24h";
     if (state.range === "24h"){
       var H = hourlyRain(state.hourly ? state.hourly.rows : null);
       if (!H){ stat.textContent = "Noch keine Stundenwerte"; if (charts["c-rain"]){ charts["c-rain"].destroy(); delete charts["c-rain"]; } return; }
@@ -282,8 +300,18 @@ footer a{color:inherit}
     }
     var days = state.daily ? state.daily.rows : [];
     var labels = days.map(function(r){ var p = r.day.split("-"); return p[2] + "." + p[1] + "."; });
-    var vals = days.map(function(r){ return has(r.rain_mm) ? r.rain_mm : null; });
     o.scales.x.ticks.maxTicksLimit = 10;
+    if (state.rainView === "rate"){
+      // Höchste Regenrate des Tages, wie "Max RRate" bei AWEKAS
+      var rr = days.map(function(r){ return has(r.rainrate_max) ? r.rainrate_max : null; });
+      o.scales.y.beginAtZero = true;
+      o.plugins.tooltip = {callbacks:{label:function(c){ return "Max. Regenrate: " + num(c.parsed.y, 1) + " mm/h"; }}};
+      mount("c-rain", {type:"bar", data:{labels:labels, datasets:[{data:rr, backgroundColor:col, borderRadius:3}]}, options:o});
+      stat.textContent = rr.some(has) ? "Höchste Regenrate je Tag, max. " + num(maxOf(rr), 1) + " mm/h"
+                                      : "Max. Regenrate je Tag fehlt – Worker wetter-archiv aktualisieren";
+      return;
+    }
+    var vals = days.map(function(r){ return has(r.rain_mm) ? r.rain_mm : null; });
     o.plugins.tooltip = {callbacks:{label:function(c){ return num(c.parsed.y, 1) + " L/qm"; }}};
     mount("c-rain", {type:"bar", data:{labels:labels, datasets:[{data:vals, backgroundColor:col, borderRadius:3}]}, options:o});
     var sum = vals.filter(has).reduce(function(a,b){ return a+b; }, 0);
@@ -359,7 +387,7 @@ footer a{color:inherit}
       ["cMonths","cCum"].forEach(function(id){ if (charts[id]){ charts[id].destroy(); delete charts[id]; } });
       $("tHead").innerHTML = ""; $("tBody").innerHTML = ""; return;
     }
-    notice(years.length < 2 ? "Bisher liegt nur " + years[0] + " im Archiv. Ein Vergleich entsteht, sobald ein zweites Jahr Daten hat." : null);
+    notice(years.length < 2 ? "Eigene Messwerte gibt es bisher nur für " + years[0] + ". Die Karten ab „Monatswerte“ zeigen nur diese; die Vorjahre oben stammen aus Modelldaten." : null);
 
     // Monatsvergleich
     $("monthTitle").textContent = M.label + " je Monat (" + AGG_WORD[M.agg] + ", " + M.unit + ")";
@@ -410,12 +438,119 @@ footer a{color:inherit}
     }).join("");
   }
 
+  // ---------- Jahre: eigene Station, davor Modelldaten (Open-Meteo, ERA5) ----------
+  var HIST_URL = "https://archive-api.open-meteo.com/v1/archive?latitude=49.61&longitude=6.40&start_date=1991-01-01" +
+                 "&daily=precipitation_sum,temperature_2m_mean,shortwave_radiation_sum&timezone=Europe%2FBerlin";
+  var NORM_FROM = 1991, NORM_TO = 2020;
+  var MIN_N = 144;   // eigene Tageswerte erst ab einem halben Tag mit Messungen (288 je Tag)
+
+  function loadHist(){
+    try{
+      var c = JSON.parse(localStorage.getItem("hist_om_v1") || "null");
+      if (c && Date.now() - c.at < 12*3600e3) return Promise.resolve(c.d);
+    }catch(e){}
+    return fetch(HIST_URL + "&end_date=" + new Date().toISOString().slice(0,10)).then(function(r){
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return r.json();
+    }).then(function(j){
+      if (j.error) throw new Error(j.reason || "Open-Meteo");
+      var d = {time:j.daily.time, p:j.daily.precipitation_sum, t:j.daily.temperature_2m_mean,
+               r:j.daily.shortwave_radiation_sum.map(function(x){ return has(x) ? Math.round(x/3.6*100)/100 : null; })};   // MJ/m² -> kWh/m²
+      try{ localStorage.setItem("hist_om_v1", JSON.stringify({at:Date.now(), d:d})); }catch(e){}
+      return d;
+    });
+  }
+
+  // Jahressummen: je Tag eigene Messung, sonst Modellwert
+  function yearTable(){
+    var H = state.hist, days = {}, Y = {};
+    if (H) H.time.forEach(function(day, i){ days[day] = {p:H.p[i], t:H.t[i], r:H.r[i], s:false}; });
+    (state.year ? state.year.rows : []).forEach(function(r){
+      if (!(r.n >= MIN_N)) return;
+      var m = days[r.day] || {};
+      days[r.day] = {p:has(r.rain_mm) ? r.rain_mm : m.p, t:has(r.temp_avg) ? r.temp_avg : m.t, r:has(r.solar_kwh) ? r.solar_kwh : m.r, s:true};
+    });
+    Object.keys(days).sort().forEach(function(day){
+      var v = days[day]; if (!has(v.p) && !has(v.t) && !has(v.r)) return;
+      var a = Y[day.slice(0,4)] = Y[day.slice(0,4)] || {p:0, t:0, nt:0, r:0, ns:0, nm:0, last:""};
+      if (has(v.p)) a.p += v.p;
+      if (has(v.t)){ a.t += v.t; a.nt++; }
+      if (has(v.r)) a.r += v.r;
+      if (v.s) a.ns++; else a.nm++;
+      a.last = day;
+    });
+    return Y;
+  }
+  // Mittel NORM_FROM–NORM_TO aus den Modelldaten; mit md ("MM-DD") nur 1.1. bis zu diesem Tag
+  function normal(md){
+    var H = state.hist, S = {}; if (!H) return null;
+    H.time.forEach(function(day, i){
+      var y = +day.slice(0,4); if (y < NORM_FROM || y > NORM_TO || (md && day.slice(5) > md)) return;
+      var a = S[y] = S[y] || {p:0, t:0, nt:0, r:0};
+      if (has(H.p[i])) a.p += H.p[i];
+      if (has(H.t[i])){ a.t += H.t[i]; a.nt++; }
+      if (has(H.r[i])) a.r += H.r[i];
+    });
+    var ys = Object.keys(S); if (!ys.length) return null;
+    var m = {p:0, t:0, r:0};
+    ys.forEach(function(y){ m.p += S[y].p; m.t += S[y].t / S[y].nt; m.r += S[y].r; });
+    return {p:m.p/ys.length, t:m.t/ys.length, r:m.r/ys.length};
+  }
+
+  function renderYears(){
+    var Y = yearTable(), cur = String(new Date().getFullYear());
+    var shown = Object.keys(Y).sort().filter(function(y){ return +y >= +cur - 10; });
+    if (!shown.length) return;
+    var md = Y[cur] ? Y[cur].last.slice(5) : null, bis = md ? md.slice(3) + "." + md.slice(0,2) + "." : "";
+    var full = normal(null), part = md ? normal(md) : null;
+    var lbl = shown.map(function(y){ return y === cur ? y + "*" : y; });
+    function tm(y){ return Y[y].nt ? Math.round(Y[y].t / Y[y].nt * 10) / 10 : null; }
+    var norm = NORM_FROM + "–" + NORM_TO;
+
+    var o = baseOptions(true);
+    o.scales.y.beginAtZero = true;
+    o.scales.y.title = {display:true, text:"mm"};
+    o.scales.y1 = {position:"right", grid:{display:false}, title:{display:true, text:"°C"}};
+    o.plugins.tooltip = {callbacks:{label:function(c){ return c.dataset.label + ": " + (c.dataset.yAxisID === "y1" ? num(c.parsed.y, 1) + " °C" : num(c.parsed.y, 0) + " mm"); }}};
+    mount("cYears", {type:"bar", data:{labels:lbl, datasets:[
+      {type:"line", label:"Ø Temperatur", data:shown.map(tm), yAxisID:"y1", borderColor:css("--accent-temp"), backgroundColor:css("--accent-temp"), borderWidth:2, pointRadius:3, tension:0, order:0},
+      {label:"Niederschlag", data:shown.map(function(y){ return Math.round(Y[y].p); }), yAxisID:"y", backgroundColor:css("--accent-rain"), borderRadius:3, order:1}
+    ]}, options:o});
+    $("yrStat").textContent = (full ? "Mittel " + norm + ": " + num(full.p, 0) + " mm · " + num(full.t, 1) + " °C" : "") + (bis ? " · * " + cur + " bis " + bis : "");
+
+    var o2 = baseOptions(false);
+    o2.scales.y.beginAtZero = true;
+    o2.plugins.tooltip = {callbacks:{label:function(c){ return num(c.parsed.y, 0) + " kWh/m²"; }}};
+    mount("cSun", {type:"bar", data:{labels:lbl, datasets:[{label:"Sonnenenergie", data:shown.map(function(y){ return Math.round(Y[y].r); }), backgroundColor:css("--accent-solar"), borderRadius:3}]}, options:o2});
+    $("sunStat").textContent = "Globalstrahlung je m²" + (full ? ", Mittel " + norm + ": " + num(full.r, 0) + " kWh/m²" : "") + (bis ? " · * bis " + bis : "");
+
+    function dev(v, m, pct){
+      if (!has(v) || !has(m)) return "–";
+      var x = pct ? Math.round((v / m - 1) * 100) : Math.round((v - m) * 10) / 10;
+      return (x > 0 ? "+" : x < 0 ? "−" : "±") + num(Math.abs(x), pct ? 0 : 1) + (pct ? " %" : " K");
+    }
+    var rows = shown.slice().reverse().map(function(y){
+      var a = Y[y], m = (y === cur ? part : full) || {}, t = tm(y);
+      var src = a.ns && a.nm ? "Station + Modell" : a.ns ? "Station" : "Modell";
+      return "<tr><td>" + y + (y === cur ? '<span class="d">bis ' + bis + "</span>" : "") + "</td><td>" + num(a.p, 0) + " mm</td><td>" + dev(a.p, m.p, true) +
+             "</td><td>" + num(t, 1) + " °C</td><td>" + dev(t, m.t, false) + "</td><td>" + num(a.r, 0) + " kWh/m²</td><td>" + dev(a.r, m.r, true) +
+             '</td><td style="font-weight:500">' + src + (a.ns ? '<span class="d">' + a.ns + " Tage Station</span>" : "") + "</td></tr>";
+    });
+    if (full) rows.push("<tr><td>Mittel " + norm + "</td><td>" + num(full.p, 0) + " mm</td><td></td><td>" + num(full.t, 1) + " °C</td><td></td><td>" +
+                        num(full.r, 0) + ' kWh/m²</td><td></td><td style="font-weight:500">Modell</td></tr>');
+    $("cmpBody").innerHTML = rows.join("");
+    $("cmpStat").textContent = "Abweichung in % (Niederschlag, Sonnenenergie) bzw. Kelvin (Temperatur)" + (bis ? "; " + cur + " verglichen mit dem Mittel vom 1.1. bis " + bis : ".");
+  }
+
   function loadJahre(){
-    if (state.year){ renderJahre(); return Promise.resolve(); }
+    if (state.year){ renderJahre(); renderYears(); return Promise.resolve(); }
     setStatus("Lädt …");
-    return getJson("/api/daily").then(function(j){
-      state.year = j; renderJahre();
+    var hist = loadHist().then(function(d){ state.hist = d; }, function(){ state.hist = null; return "fail"; });
+    return Promise.all([getJson("/api/daily"), hist]).then(function(res){
+      var j = res[0];
+      state.year = j; renderJahre(); renderYears();
       setStatus(j.rows.length ? j.rows.length + " Tage im Archiv, seit " + fDate.format(new Date(j.rows[0].day + "T00:00:00Z")) : "Keine Daten");
+      if (res[1] === "fail") notice("Die Vorjahre von Open-Meteo konnten nicht geladen werden. Gezeigt werden nur eigene Messwerte.");
     });
   }
 
@@ -453,7 +588,7 @@ footer a{color:inherit}
     renderJahre();
   });
   window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", function(){
-    applyDefaults(); if (!$("panelV").hidden) renderVerlauf(); else renderJahre();
+    applyDefaults(); if (!$("panelV").hidden) renderVerlauf(); else { renderJahre(); renderYears(); }
   });
 
   applyDefaults();
