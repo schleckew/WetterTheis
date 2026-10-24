@@ -216,6 +216,7 @@ footer a{color:inherit}
 
   // ---------- Verlauf ----------
   var VIEW = [
+    {id:"combo", title:"Niederschlag und Temperatur", wide:true},
     {id:"temp",  title:"Temperatur", unit:"°C",   dig:1, lines:[{k:"temp", label:"Temperatur", c:"--accent-temp"}, {k:"dew", label:"Taupunkt", c:"--accent-dew"}]},
     {id:"rain",  title:"Niederschlag", unit:"mm", dig:1},
     {id:"wind",  title:"Wind", unit:"km/h",       dig:1, lines:[{k:"wind", label:"Mittel", c:"--accent-wind"}, {k:"gust", label:"Böen", c:"--accent-gust"}]},
@@ -228,7 +229,7 @@ footer a{color:inherit}
   function buildCards(){
     $("gridV").innerHTML = VIEW.map(function(d){
       var seg = d.id === "rain" ? '<div class="seg" id="rainSeg" aria-label="Darstellung" style="margin:6px 0 4px"><button type="button" data-rv="sum" aria-pressed="true">Niederschlag</button><button type="button" data-rv="rate" aria-pressed="false">Regenrate</button></div>' : '';
-      return '<div class="card"><h2>'+d.title+'</h2>' + seg + '<div class="stat" id="st-'+d.id+'"></div>' +
+      return '<div class="card' + (d.wide ? ' wide' : '') + '"><h2>'+d.title+'</h2>' + seg + '<div class="stat" id="st-'+d.id+'"></div>' +
              '<div class="chartbox"><canvas id="c-'+d.id+'"></canvas></div></div>';
     }).join("");
   }
@@ -243,6 +244,7 @@ footer a{color:inherit}
     VIEW.forEach(function(d){
       var stat = $("st-"+d.id);
       if (d.id === "rain"){ renderRain(d, rows, ts, tick, title, stat); return; }
+      if (d.id === "combo"){ renderCombo(stat); return; }
       var datasets = d.lines.map(function(l){
         var col = css(l.c);
         return {label:l.label, data:rows.map(function(r){ return has(r[l.k]) ? r[l.k] : null; }),
@@ -259,6 +261,40 @@ footer a{color:inherit}
       else if (d.id === "solar"){ stat.textContent = "Spitze " + num(maxOf(vals), 0) + " W/m² · UV max. " + num(maxOf(rows.map(function(r){ return r.uv; })), 1); }
       else { stat.textContent = "min " + num(minOf(vals), d.dig) + " · max " + num(maxOf(vals), d.dig) + " " + d.unit; }
     });
+  }
+
+  // Niederschlag (Balken) und Ø Temperatur (Linie) je Stunde bzw. Tag, wie im Jahresvergleich
+  function renderCombo(stat){
+    var labels, rain, temp, what;
+    if (state.range === "24h"){
+      var H = hourlyRain(state.hourly ? state.hourly.rows : null);
+      if (!H){ stat.textContent = "Noch keine Stundenwerte"; return; }
+      var tAt = {}; state.hourly.rows.forEach(function(r){ tAt[r.t] = r.temp; });
+      labels = H.sums.map(function(_, k){ return fHour.format(new Date((H.start + k*3600)*1000)); });
+      rain = H.sums;
+      temp = H.sums.map(function(_, k){ var v = tAt[H.start + k*3600]; return has(v) ? v : null; });
+      what = "Stundenwerte";
+    } else {
+      var days = state.daily ? state.daily.rows : [];
+      labels = days.map(function(r){ var p = r.day.split("-"); return p[2] + "." + p[1] + "."; });
+      rain = days.map(function(r){ return has(r.rain_mm) ? r.rain_mm : null; });
+      temp = days.map(function(r){ return has(r.temp_avg) ? r.temp_avg : null; });
+      what = "Tageswerte";
+    }
+    var o = baseOptions(true);
+    o.scales.x.ticks.maxTicksLimit = state.range === "24h" ? 8 : 10;
+    o.scales.y.beginAtZero = true;
+    o.scales.y.suggestedMax = 2;
+    o.scales.y.title = {display:true, text:"L/qm"};
+    o.scales.y1 = {position:"right", grid:{display:false}, title:{display:true, text:"°C"}};
+    o.plugins.tooltip = {callbacks:{label:function(c){ return c.dataset.label + ": " + num(c.parsed.y, 1) + (c.dataset.yAxisID === "y1" ? " °C" : " L/qm"); }}};
+    mount("c-combo", {type:"bar", data:{labels:labels, datasets:[
+      {type:"line", label:"Ø Temperatur", data:temp, yAxisID:"y1", borderColor:css("--accent-temp"), backgroundColor:css("--accent-temp"), borderWidth:2, pointRadius:state.range === "24h" ? 2 : 3, tension:.25, spanGaps:true, order:0},
+      {label:"Niederschlag", data:rain, yAxisID:"y", backgroundColor:css("--accent-rain"), borderRadius:3, order:1}
+    ]}, options:o});
+    var t = temp.filter(has);
+    stat.textContent = "Summe " + num(rain.filter(has).reduce(function(a,b){ return a+b; }, 0), 1) + " L/qm" +
+      (t.length ? " · Ø " + num(t.reduce(function(a,b){ return a+b; }, 0) / t.length, 1) + " °C" : "") + " · " + what;
   }
 
   // Stundenwerte der letzten 24 Stunden aus /api/hourly. Der Worker bildet "mm" aus den Zuwächsen
