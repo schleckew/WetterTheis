@@ -161,6 +161,7 @@ footer a{color:inherit}
     Tage mit Lücken in der Aufzeichnung können zu niedrige Summen zeigen.
     Jahreswerte vor Beginn des Archivs und an Tagen mit zu wenigen Messungen: Modelldaten (ERA5) von
     <a href="https://open-meteo.com/" target="_blank" rel="noopener" style="color:inherit">Open-Meteo</a> für Wincheringen, keine Stationsmessung.
+    Die Sonnenenergie des Modells wird je Monat an den eigenen Solarsensor angeglichen, sobald es dafür genug gemeinsame Tage gibt.
   </footer>
 </div>
 
@@ -497,10 +498,28 @@ footer a{color:inherit}
     });
   }
 
+  // Sonnenenergie: Modell an den eigenen Sensor angleichen (Verschattung bei tiefer Sonne, Kalibrierung).
+  // Faktor je Kalendermonat = Summe Station / Summe Modell über alle Tage, für die es beides gibt.
+  var SUN_MIN_DAYS = 20;   // so viele gemeinsame Tage braucht ein Monat, sonst bleibt der Modellwert
+  function sunFactors(){
+    var H = state.hist, idx = {}, sum = {}, f = {};
+    if (!H) return f;
+    H.time.forEach(function(day, i){ idx[day] = i; });
+    (state.year ? state.year.rows : []).forEach(function(r){
+      var i = idx[r.day];
+      if (!(r.n >= MIN_N) || !has(r.solar_kwh) || i === undefined || !has(H.r[i]) || H.r[i] <= 0) return;
+      var a = sum[r.day.slice(5,7)] = sum[r.day.slice(5,7)] || {s:0, m:0, n:0};
+      a.s += r.solar_kwh; a.m += H.r[i]; a.n++;
+    });
+    Object.keys(sum).forEach(function(m){ if (sum[m].n >= SUN_MIN_DAYS) f[m] = sum[m].s / sum[m].m; });
+    return f;
+  }
+  function modelSun(day, v){ return has(v) ? v * (state.sunF[day.slice(5,7)] || 1) : v; }
+
   // Jahressummen: je Tag eigene Messung, sonst Modellwert
   function yearTable(){
     var H = state.hist, days = {}, Y = {};
-    if (H) H.time.forEach(function(day, i){ days[day] = {p:H.p[i], t:H.t[i], r:H.r[i], s:false}; });
+    if (H) H.time.forEach(function(day, i){ days[day] = {p:H.p[i], t:H.t[i], r:modelSun(day, H.r[i]), s:false}; });
     (state.year ? state.year.rows : []).forEach(function(r){
       if (!(r.n >= MIN_N)) return;
       var m = days[r.day] || {};
@@ -525,7 +544,7 @@ footer a{color:inherit}
       var a = S[y] = S[y] || {p:0, t:0, nt:0, r:0};
       if (has(H.p[i])) a.p += H.p[i];
       if (has(H.t[i])){ a.t += H.t[i]; a.nt++; }
-      if (has(H.r[i])) a.r += H.r[i];
+      if (has(H.r[i])) a.r += modelSun(day, H.r[i]);
     });
     var ys = Object.keys(S); if (!ys.length) return null;
     var m = {p:0, t:0, r:0};
@@ -534,6 +553,7 @@ footer a{color:inherit}
   }
 
   function renderYears(){
+    state.sunF = sunFactors();
     var Y = yearTable(), cur = String(new Date().getFullYear());
     var shown = Object.keys(Y).sort().filter(function(y){ return +y >= +cur - 10; });
     if (!shown.length) return;
@@ -558,7 +578,10 @@ footer a{color:inherit}
     o2.scales.y.beginAtZero = true;
     o2.plugins.tooltip = {callbacks:{label:function(c){ return num(c.parsed.y, 0) + " kWh/m²"; }}};
     mount("cSun", {type:"bar", data:{labels:lbl, datasets:[{label:"Sonnenenergie", data:shown.map(function(y){ return Math.round(Y[y].r); }), backgroundColor:css("--accent-solar"), borderRadius:3}]}, options:o2});
-    $("sunStat").textContent = "Globalstrahlung je m²" + (full ? ", Mittel " + norm + ": " + num(full.r, 0) + " kWh/m²" : "") + (bis ? " · * bis " + bis : "");
+    var fv = Object.keys(state.sunF).map(function(m){ return state.sunF[m]; });
+    $("sunStat").textContent = "Globalstrahlung je m²" + (full ? ", Mittel " + norm + ": " + num(full.r, 0) + " kWh/m²" : "") + (bis ? " · * bis " + bis : "") +
+      (fv.length ? " · Modellwerte an den eigenen Sensor angeglichen (" + (fv.length < 12 ? fv.length + " von 12 Monaten, " : "") +
+                   "Faktor " + num(minOf(fv), 2) + " bis " + num(maxOf(fv), 2) + ")" : " · reine Modellwerte, noch zu wenig eigene Messtage zum Angleichen");
 
     function dev(v, m, pct){
       if (!has(v) || !has(m)) return "–";
