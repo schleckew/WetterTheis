@@ -434,6 +434,8 @@ var FCCSS=`
 .fc .dtab.on .dth b{color:#fff}
 .fc .dbd{flex:1;padding:8px 2px 10px;display:flex;flex-direction:column;align-items:center;gap:4px}
 .fc .dtab.on .dbd{background:var(--a-card2)}
+.fc .dtab.cur,.fc .ptab.cur,.tp .hc.now{position:relative}
+.fc .dtab.cur::after,.fc .ptab.cur::after,.tp .hc.now::after{content:"";position:absolute;inset:0;border:3px solid var(--a-crit);border-radius:inherit;pointer-events:none}
 .fc .hi{font-family:var(--a-disp);font-weight:800;font-size:28px;line-height:1}
 .fc .lo{font-family:var(--a-disp);font-weight:700;font-size:21px;line-height:1.1}
 .fc .di{font-size:34px;line-height:1.2}
@@ -784,9 +786,13 @@ function fcRender(){
   if(selP>=P.length) selP=Math.max(0,P.length-1);
   var drop='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+IC.drop+'</svg>';
 
+  // Rot gerahmt: heutiger Tag und laufender Abschnitt (0–6 Uhr gehört die Nacht noch zum Vortag)
+  var today=FC.now.slice(0,10), H=+FC.now.slice(11,13);
+  var curP=(d.time[selD]===today&&H>=6)?PARTS[Math.floor(H/6)].n:null;
+
   var ptabs=P.map(function(a,i){
     var w=periodWx(a);
-    return '<button type="button" role="tab" class="ptab'+(i===selP?' on':'')+'" data-p="'+i+'" aria-selected="'+(i===selP)+'" title="'+esc(w[1])+'">'+
+    return '<button type="button" role="tab" class="ptab'+(i===selP?' on':'')+(a.name===curP?' cur':'')+'" data-p="'+i+'" aria-selected="'+(i===selP)+'" title="'+esc(w[1])+'">'+
       '<span class="pn">'+a.name+'</span><span class="pt tn" style="color:'+tcol(a.t)+'">'+r(a.t)+'°</span><span class="pi">'+w[0]+'</span>'+
       '<span class="pw">'+(a.ws>=1?windRose(a.dir,18,a.ws)+'<b>'+r(a.ws)+'</b>'+gustHtml(a.gust):'')+'</span><span class="pp">'+drop+r(a.pop)+' %</span><span class="pq">'+(a.mm>=0.1?fmtL(a.mm):'0')+' L/qm</span></button>';
   }).join("");
@@ -797,7 +803,7 @@ function fcRender(){
     var date=t.slice(8,10)+"."+t.slice(5,7)+".", da=dayAgg(k);
     var ss=d.sunshine_duration?Math.round(d.sunshine_duration[k]/3600):null;
     var pr=d.precipitation_probability_max[k];
-    return '<button type="button" role="tab" class="dtab'+(k===selD?' on':'')+'" data-d="'+k+'" aria-selected="'+(k===selD)+'" title="'+esc(w[1])+'">'+
+    return '<button type="button" role="tab" class="dtab'+(k===selD?' on':'')+(t===today?' cur':'')+'" data-d="'+k+'" aria-selected="'+(k===selD)+'" title="'+esc(w[1])+'">'+
       '<span class="dth"><b>'+nm+'</b>'+date+'</span><span class="dbd">'+
       '<span class="hi tn" style="color:'+tcol(hi)+'">'+r(hi)+'°</span><span class="lo tn" style="color:'+tcol(lo)+'">'+r(lo)+'°</span>'+
       '<span class="di">'+w[0]+'</span><span class="dw">'+windRose(da.dir,18,da.ws)+'<b>'+r(da.ws)+'</b>'+gustHtml(d.wind_gusts_10m_max[k])+'</span>'+
