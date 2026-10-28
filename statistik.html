@@ -250,6 +250,7 @@ footer a{color:inherit}
       var stat = $("st-"+d.id);
       if (d.id === "rain"){ renderRain(d, rows, ts, tick, title, stat); return; }
       if (d.id === "combo"){ renderCombo(stat); return; }
+      if (d.id === "wind"){ renderWind(rows, stat); return; }
       var datasets = d.lines.map(function(l){
         var col = css(l.c);
         return {label:l.label, data:rows.map(function(r){ return has(r[l.k]) ? r[l.k] : null; }),
@@ -262,10 +263,40 @@ footer a{color:inherit}
       mount("c-"+d.id, {type:"line", data:{labels:ts, datasets:datasets}, options:o});
 
       var main = d.lines[0].k, vals = rows.map(function(r){ return r[main]; });
-      if (d.id === "wind"){ stat.textContent = "Stärkste Böe " + num(maxOf(rows.map(function(r){ return r.gust; })), 1) + " km/h"; }
-      else if (d.id === "solar"){ stat.textContent = "Spitze " + num(maxOf(vals), 0) + " W/m² · UV max. " + num(maxOf(rows.map(function(r){ return r.uv; })), 1); }
+      if (d.id === "solar"){ stat.textContent = "Spitze " + num(maxOf(vals), 0) + " W/m² · UV max. " + num(maxOf(rows.map(function(r){ return r.uv; })), 1); }
       else { stat.textContent = "min " + num(minOf(vals), d.dig) + " · max " + num(maxOf(vals), d.dig) + " " + d.unit; }
     });
+  }
+
+  // Wind wie bei AWEKAS: Mittel und Maximum (stärkste Böe) je Stunde (24 h) bzw. je Tag (7/30 Tage)
+  function renderWind(rows, stat){
+    var labels, avg, max, peak = null, when = "";
+    if (state.range === "24h"){
+      var hr = state.hourly ? state.hourly.rows.slice(-24) : [];
+      labels = hr.map(function(r){ return fHour.format(new Date(r.t*1000)); });
+      avg = hr.map(function(r){ return has(r.wind) ? r.wind : null; });
+      max = hr.map(function(r){ return has(r.gust) ? r.gust : null; });
+      // Zeitpunkt der stärksten Böe genauer aus den 5-Minuten-Werten
+      rows.forEach(function(r){ if (has(r.gust) && (!peak || r.gust > peak.gust)) peak = r; });
+      if (peak){ when = " um " + fHour.format(new Date(peak.t*1000)) + " Uhr"; peak = peak.gust; }
+    } else {
+      var days = state.daily ? state.daily.rows : [], best = null;
+      labels = days.map(function(r){ var p = r.day.split("-"); return p[2] + "." + p[1] + "."; });
+      avg = days.map(function(r){ return has(r.wind_avg) ? r.wind_avg : null; });
+      max = days.map(function(r){ return has(r.gust_max) ? r.gust_max : null; });
+      days.forEach(function(r){ if (has(r.gust_max) && (!best || r.gust_max > best.gust_max)) best = r; });
+      if (best){ peak = best.gust_max; when = " am " + best.day.slice(8,10) + "." + best.day.slice(5,7) + "."; }
+    }
+    if (!has(peak)) peak = maxOf(max);
+    var o = baseOptions(true);
+    o.scales.x.ticks.maxTicksLimit = state.range === "24h" ? 8 : 10;
+    o.scales.y.beginAtZero = true;
+    o.plugins.tooltip = {callbacks:{label:function(c){ return c.dataset.label + ": " + num(c.parsed.y, 1) + " km/h"; }}};
+    function line(label, data, c){ var col = css(c); return {label:label, data:data, borderColor:col, backgroundColor:col, borderWidth:2, pointRadius:3, pointHoverRadius:4, tension:0, spanGaps:true}; }
+    mount("c-wind", {type:"line", data:{labels:labels, datasets:[line("Mittel", avg, "--accent-wind"), line("Max. (Böe)", max, "--accent-gust")]}, options:o});
+    var a = avg.filter(has);
+    stat.textContent = (a.length ? "Mittel " + num(a.reduce(function(x,y){ return x+y; }, 0) / a.length, 1) + " km/h · " : "") +
+                       "Max. " + num(peak, 1) + " km/h" + when + " · " + (state.range === "24h" ? "Stundenwerte" : "Tageswerte");
   }
 
   // Niederschlag (Balken) und Ø Temperatur (Linie) je Stunde bzw. Tag, wie im Jahresvergleich
@@ -385,7 +416,8 @@ footer a{color:inherit}
     rain:  {label:"Niederschlag",   unit:"mm",     field:"rain_mm",   agg:"sum", dig:0, peak:"rain_mm",  peakLabel:"Nassester Tag", peakDig:1},
     solar: {label:"Sonnenenergie",  unit:"kWh/m²", field:"solar_kwh", agg:"sum", dig:0, peak:"solar_kwh",peakLabel:"Sonnigster Tag", peakDig:1},
     temp:  {label:"Temperatur",     unit:"°C",     field:"temp_avg",  agg:"avg", dig:1, peak:"temp_max", peakLabel:"Wärmster Tag", peakDig:1},
-    gust:  {label:"Böen",           unit:"km/h",   field:"gust_max",  agg:"max", dig:0, peak:"gust_max", peakLabel:"Stärkste Böe", peakDig:0}
+    wind:  {label:"Wind (Mittel)",  unit:"km/h",   field:"wind_avg",  agg:"avg", dig:1, peak:"wind_max", peakLabel:"Stärkster Wind", peakDig:1},
+    gust:  {label:"Böen (Max.)",    unit:"km/h",   field:"gust_max",  agg:"max", dig:0, peak:"gust_max", peakLabel:"Stärkste Böe", peakDig:1}
   };
   var AGG_WORD = {sum:"Summe", avg:"Durchschnitt", max:"Maximum"};
   var PALETTE = ["#2a78d6","#eb6834","#1baf7a","#4a3aa7","#d99400","#d03b3b","#7c859a"];
