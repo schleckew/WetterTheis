@@ -251,6 +251,7 @@ footer a{color:inherit}
       if (d.id === "rain"){ renderRain(d, rows, ts, tick, title, stat); return; }
       if (d.id === "combo"){ renderCombo(stat); return; }
       if (d.id === "wind"){ renderWind(rows, stat); return; }
+      if (d.id === "solar" && range !== "24h"){ renderSolarDays(stat); return; }
       var datasets = d.lines.map(function(l){
         var col = css(l.c);
         return {label:l.label, data:rows.map(function(r){ return has(r[l.k]) ? r[l.k] : null; }),
@@ -266,6 +267,22 @@ footer a{color:inherit}
       if (d.id === "solar"){ stat.textContent = "Spitze " + num(maxOf(vals), 0) + " W/m² · UV max. " + num(maxOf(rows.map(function(r){ return r.uv; })), 1); }
       else { stat.textContent = "min " + num(minOf(vals), d.dig) + " · max " + num(maxOf(vals), d.dig) + " " + d.unit; }
     });
+  }
+
+  // Sonne bei 7/30 Tagen: Tagesertrag (Energie je m²) statt des Leistungsverlaufs in W/m²
+  function renderSolarDays(stat){
+    var days = state.daily ? state.daily.rows : [], best = null;
+    var labels = days.map(function(r){ var p = r.day.split("-"); return p[2] + "." + p[1] + "."; });
+    var vals = days.map(function(r){ return has(r.solar_kwh) ? r.solar_kwh : null; });
+    days.forEach(function(r){ if (has(r.solar_kwh) && (!best || r.solar_kwh > best.solar_kwh)) best = r; });
+    var o = baseOptions(false);
+    o.scales.x.ticks.maxTicksLimit = 10;
+    o.scales.y.beginAtZero = true;
+    o.plugins.tooltip = {callbacks:{label:function(c){ return "Tagesertrag: " + num(c.parsed.y, 2) + " kWh/m²"; }}};
+    mount("c-solar", {type:"bar", data:{labels:labels, datasets:[{data:vals, backgroundColor:css("--accent-solar"), borderRadius:3}]}, options:o});
+    var v = vals.filter(has), sum = v.reduce(function(a,b){ return a+b; }, 0);
+    stat.textContent = v.length ? "Summe " + num(sum, 1) + " kWh/m² · Ø " + num(sum / v.length, 2) + " kWh/m² je Tag" +
+      (best ? " · bester Tag " + num(best.solar_kwh, 2) + " am " + best.day.slice(8,10) + "." + best.day.slice(5,7) + "." : "") : "Keine Tageswerte";
   }
 
   // Wind wie bei AWEKAS: Mittel und Maximum (stärkste Böe) je Stunde (24 h) bzw. je Tag (7/30 Tage)
