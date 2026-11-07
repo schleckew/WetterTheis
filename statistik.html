@@ -71,7 +71,24 @@ body{margin:0;min-height:100%;background:var(--bg);color:var(--ink);font-family:
 .nav button{font:inherit;font-size:14px;font-weight:600;border:1px solid var(--line);background:var(--surface);color:var(--ink);padding:7px 12px;border-radius:10px;cursor:pointer}
 .nav button:disabled{opacity:.4;cursor:default}
 .nav button:focus-visible{outline:3px solid var(--c-sun);outline-offset:2px}
-.navlbl{min-width:13ch;text-align:center;font-weight:600;font-variant-numeric:tabular-nums}
+.navlbl{min-width:13ch;text-align:center;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}
+.navlbl.flash{animation:flash .5s ease}
+@keyframes flash{from{color:var(--c-wind)}}
+.bar.sticky{position:sticky;top:0;z-index:20;background:var(--bg);margin:0 -14px 12px;padding:8px 14px;transition:box-shadow .2s}
+.bar.sticky.stuck{box-shadow:0 6px 12px -8px rgba(0,0,0,.35);border-bottom:1px solid var(--line)}
+.s{display:none}
+@media (max-width:560px){
+  .bar.sticky{flex-wrap:nowrap;gap:6px;padding:6px 14px}
+  .bar.sticky .nav{gap:4px;flex-wrap:nowrap;min-width:0}
+  .bar.sticky .nav button,.bar.sticky .seg button{padding:6px 9px;font-size:13px}
+  .bar.sticky .navlbl{min-width:0;font-size:13px;overflow:hidden;text-overflow:ellipsis}
+  .bar.sticky .seg{flex-wrap:nowrap;flex:none}
+  .bar.sticky .l{display:none}.bar.sticky .s{display:inline}
+}
+@media (max-width:360px){
+  .bar.sticky{gap:4px;padding:6px 10px;margin-left:-14px;margin-right:-14px}
+  .bar.sticky .nav button,.bar.sticky .seg button{padding:6px 7px}
+}
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,440px),1fr));gap:12px}
 .card{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:16px 18px 14px;min-width:0}
 .card h2{margin:0;font-size:15px;font-weight:700;font-family:var(--disp)}
@@ -113,17 +130,17 @@ footer a{color:inherit}
 
   <!-- Verlauf -->
   <section id="panelV" role="tabpanel" aria-labelledby="tabV">
-    <div class="bar">
+    <div class="bar sticky" id="navBar">
       <div class="nav" aria-label="Zeitraum blättern">
         <button type="button" id="navPrev" aria-label="Zeitraum zurück">◀</button>
         <span class="navlbl" id="navLbl" aria-live="polite">Letzte 24 Stunden</span>
         <button type="button" id="navNext" aria-label="Zeitraum vor" disabled>▶</button>
-        <button type="button" id="navNow" disabled>Aktuell</button>
+        <button type="button" id="navNow" aria-label="Aktuell" disabled><span class="l">Aktuell</span><span class="s">⟳</span></button>
       </div>
       <div class="seg" id="rangeSeg" aria-label="Zeitraum">
         <button type="button" data-range="24h" aria-pressed="true">Tag</button>
-        <button type="button" data-range="7d" aria-pressed="false">7 Tage</button>
-        <button type="button" data-range="30d" aria-pressed="false">30 Tage</button>
+        <button type="button" data-range="7d" aria-pressed="false"><span class="l">7 Tage</span><span class="s">7 T</span></button>
+        <button type="button" data-range="30d" aria-pressed="false"><span class="l">30 Tage</span><span class="s">30 T</span></button>
       </div>
     </div>
     <div class="grid" id="gridV"></div>
@@ -262,8 +279,12 @@ footer a{color:inherit}
   }
   function updateNav(){
     var w = win(state.off), d = function(x, y){ var p = x.split("-"); return p[2] + "." + p[1] + "." + (y ? p[0] : ""); };
-    $("navLbl").textContent = w.n === 1 ? (state.off ? WD[new Date(w.toDay + "T12:00:00Z").getUTCDay()] + " " + d(w.toDay, true) : "Letzte 24 Stunden")
-      : d(w.from, false) + "–" + d(w.toDay, true);
+    var lang = w.n === 1 ? (state.off ? WD[new Date(w.toDay + "T12:00:00Z").getUTCDay()] + " " + d(w.toDay, true) : "Letzte 24 Stunden")
+                         : d(w.from, false) + "–" + d(w.toDay, true);
+    var kurz = w.n === 1 ? (state.off ? WD[new Date(w.toDay + "T12:00:00Z").getUTCDay()] + " " + d(w.toDay, false) : "Letzte 24 h")
+                         : w.from.slice(0,7) === w.toDay.slice(0,7) ? w.from.slice(8,10) + ".–" + d(w.toDay, false)
+                         : d(w.from, false) + "–" + d(w.toDay, false);
+    $("navLbl").innerHTML = '<span class="l">' + lang + '</span><span class="s">' + kurz + "</span>";
     var first = state.first && (state.range === "24h" ? state.first.raw : state.first.day);
     $("navPrev").disabled = !!first && win(state.off + 1).toDay < first;
     $("navNext").disabled = $("navNow").disabled = !state.off;
@@ -725,7 +746,28 @@ footer a{color:inherit}
     this.querySelectorAll("button").forEach(function(x){ x.setAttribute("aria-pressed", x === b); });
     loadVerlauf().catch(fail);
   });
-  function go(off){ state.off = Math.max(0, off); loadVerlauf().catch(fail); }
+  function go(off){
+    state.off = Math.max(0, off); loadVerlauf().catch(fail);
+    var l = $("navLbl"); l.classList.remove("flash"); void l.offsetWidth; l.classList.add("flash");
+  }
+  // Wischen über die Kacheln: nach rechts = zurück, nach links = vor. Nur klar waagerechte Bewegungen zählen.
+  var sw = null;
+  $("gridV").addEventListener("touchstart", function(e){
+    sw = e.touches.length === 1 ? {x:e.touches[0].clientX, y:e.touches[0].clientY, t:Date.now()} : null;
+  }, {passive:true});
+  $("gridV").addEventListener("touchend", function(e){
+    if (!sw) return;
+    var t = e.changedTouches[0], dx = t.clientX - sw.x, dy = t.clientY - sw.y, fast = Date.now() - sw.t < 700;
+    sw = null;
+    if (!fast || Math.abs(dx) < 60 || Math.abs(dx) < 2 * Math.abs(dy)) return;
+    if (dx > 0 && !$("navPrev").disabled) go(state.off + 1);
+    if (dx < 0 && !$("navNext").disabled) go(state.off - 1);
+  }, {passive:true});
+  // Schatten, sobald die Leiste oben klebt
+  if ("IntersectionObserver" in window){
+    var mark = document.createElement("div"); $("navBar").before(mark);
+    new IntersectionObserver(function(en){ $("navBar").classList.toggle("stuck", !en[0].isIntersecting); }).observe(mark);
+  }
   $("navPrev").addEventListener("click", function(){ go(state.off + 1); });
   $("navNext").addEventListener("click", function(){ go(state.off - 1); });
   $("navNow").addEventListener("click", function(){ go(0); });
