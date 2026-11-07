@@ -152,6 +152,14 @@ const RANGES = {
 };
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
+// ?to=<Unix-Sekunden>: Ende eines vergangenen Zeitraums. Ohne Angabe gilt "jetzt", und die Obergrenze
+// bleibt offen (AWEKAS-Zeitstempel liegen manchmal ein paar Sekunden in der Zukunft).
+function endOf(url) {
+  const now = Math.floor(Date.now() / 1000);
+  const to = Math.floor(Number(url.searchParams.get("to")));
+  return Number.isFinite(to) && to > 0 && to < now ? { end: to, upper: to } : { end: now, upper: now + 86400 };
+}
+
 export default {
   async scheduled(_event, env, ctx) {
     ctx.waitUntil(collect(env).catch((e) => console.error("collect:", e.message)));
@@ -166,14 +174,15 @@ export default {
 
       if (url.pathname === "/api/series") {
         const r = RANGES[url.searchParams.get("range")] || RANGES["24h"];
-        const since = Math.floor(Date.now() / 1000) - r.seconds;
+        const { end, upper } = endOf(url);   // optional ?to= zum Zurückblättern
+        const since = end - r.seconds;
         const { results } = await env.DB.prepare(
           `SELECT (ts / ?) * ? AS t,
                   ROUND(AVG(temp),1) AS temp, ROUND(AVG(dew),1) AS dew, ROUND(AVG(hum),0) AS hum,
                   ROUND(AVG(press),1) AS press, ROUND(AVG(wind),1) AS wind, ROUND(MAX(gust),1) AS gust,
                   ROUND(AVG(rainrate),2) AS rainrate, ROUND(AVG(solar),0) AS solar, ROUND(MAX(uv),1) AS uv
-           FROM messwerte WHERE ts >= ? GROUP BY t ORDER BY t`
-        ).bind(r.bucket, r.bucket, since).all();
+           FROM messwerte WHERE ts >= ? AND ts < ? GROUP BY t ORDER BY t`
+        ).bind(r.bucket, r.bucket, since, upper).all();
         return json({ bucket: r.bucket, rows: results }, 200, "public, max-age=60");
       }
 
@@ -195,11 +204,11 @@ export default {
 
       if (url.pathname === "/api/hourly") {
         const hours = Math.min(48, Math.max(1, Number(url.searchParams.get("hours")) || 24));
-        const now = Math.floor(Date.now() / 1000);
+        const { end: now, upper } = endOf(url);
         const since = now - hours * 3600 - 3600; // eine Stunde Vorlauf für die Regen-Differenz
         const { results } = await env.DB.prepare(
-          `SELECT ts, temp, wind, gust, dir, rain FROM messwerte WHERE ts >= ? ORDER BY ts`
-        ).bind(since).all();
+          `SELECT ts, temp, wind, gust, dir, rain FROM messwerte WHERE ts >= ? AND ts < ? ORDER BY ts`
+        ).bind(since, upper).all();
         const latest = await env.DB.prepare(
           `SELECT ts, temp, dew, hum, press, wind, gust, dir, rain, rainrate, solar, uv FROM messwerte ORDER BY ts DESC LIMIT 1`
         ).first();

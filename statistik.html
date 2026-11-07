@@ -67,6 +67,11 @@ body{margin:0;min-height:100%;background:var(--bg);color:var(--ink);font-family:
 .seg button[aria-pressed="true"],.seg button[aria-selected="true"]{background:var(--c-wind);color:#fff}
 .seg button:focus-visible{outline:3px solid var(--c-sun);outline-offset:2px}
 .status{font-size:13px;color:var(--mute)}
+.nav{display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap}
+.nav button{font:inherit;font-size:14px;font-weight:600;border:1px solid var(--line);background:var(--surface);color:var(--ink);padding:7px 12px;border-radius:10px;cursor:pointer}
+.nav button:disabled{opacity:.4;cursor:default}
+.nav button:focus-visible{outline:3px solid var(--c-sun);outline-offset:2px}
+.navlbl{min-width:13ch;text-align:center;font-weight:600;font-variant-numeric:tabular-nums}
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,440px),1fr));gap:12px}
 .card{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:16px 18px 14px;min-width:0}
 .card h2{margin:0;font-size:15px;font-weight:700;font-family:var(--disp)}
@@ -109,8 +114,14 @@ footer a{color:inherit}
   <!-- Verlauf -->
   <section id="panelV" role="tabpanel" aria-labelledby="tabV">
     <div class="bar">
+      <div class="nav" aria-label="Zeitraum blättern">
+        <button type="button" id="navPrev" aria-label="Zeitraum zurück">◀</button>
+        <span class="navlbl" id="navLbl" aria-live="polite">Letzte 24 Stunden</span>
+        <button type="button" id="navNext" aria-label="Zeitraum vor" disabled>▶</button>
+        <button type="button" id="navNow" disabled>Aktuell</button>
+      </div>
       <div class="seg" id="rangeSeg" aria-label="Zeitraum">
-        <button type="button" data-range="24h" aria-pressed="true">24 Stunden</button>
+        <button type="button" data-range="24h" aria-pressed="true">Tag</button>
         <button type="button" data-range="7d" aria-pressed="false">7 Tage</button>
         <button type="button" data-range="30d" aria-pressed="false">30 Tage</button>
       </div>
@@ -229,7 +240,34 @@ footer a{color:inherit}
     {id:"press", title:"Luftdruck", unit:"hPa",   dig:1, lines:[{k:"press", label:"Luftdruck", c:"--accent-press"}]},
     {id:"hum",   title:"Luftfeuchte", unit:"%",   dig:0, lines:[{k:"hum", label:"Luftfeuchte", c:"--accent-dew"}]}
   ];
-  var state = {range:"24h", series:null, daily:null, year:null, metric:"rain", rainView:"sum"};
+  var state = {range:"24h", off:0, first:null, series:null, daily:null, year:null, metric:"rain", rainView:"sum"};
+
+  // ---------- Zeitraum: "Aktuell" = bis jetzt, zurück in ganzen Kalendertagen (Ortszeit) ----------
+  var NDAYS = {"24h":1, "7d":7, "30d":30}, WD = ["So","Mo","Di","Mi","Do","Fr","Sa"];
+  var fYmd = new Intl.DateTimeFormat("en-CA", {timeZone:TZ, year:"numeric", month:"2-digit", day:"2-digit"});
+  var fH = new Intl.DateTimeFormat("en-GB", {timeZone:TZ, hour:"2-digit", hourCycle:"h23"});
+  function ymd(ms){ return fYmd.format(new Date(ms)); }
+  function addDays(day, n){ var p = day.split("-").map(Number); return new Date(Date.UTC(p[0], p[1]-1, p[2] + n)).toISOString().slice(0,10); }
+  function midnight(day){   // Unix-Sekunden für 0 Uhr Ortszeit
+    var p = day.split("-").map(Number), g = Date.UTC(p[0], p[1]-1, p[2]);
+    return g/1000 - Number(fH.format(new Date(g))) * 3600;
+  }
+  // Tag: aktuell die letzten 24 Stunden, zurück je ein Kalendertag.
+  // 7/30 Tage: n Kalendertage bis einschließlich heute, zurück jeweils um n Tage verschoben.
+  function win(off){
+    var n = NDAYS[state.range], today = ymd(Date.now());
+    var toDay = addDays(today, -off * n), from = addDays(toDay, -(n-1));
+    if (!off) return {n:n, from:from, toDay:toDay, to:null};
+    return {n:n, from:from, toDay:toDay, to:midnight(addDays(toDay, 1)), start:midnight(toDay)};
+  }
+  function updateNav(){
+    var w = win(state.off), d = function(x, y){ var p = x.split("-"); return p[2] + "." + p[1] + "." + (y ? p[0] : ""); };
+    $("navLbl").textContent = w.n === 1 ? (state.off ? WD[new Date(w.toDay + "T12:00:00Z").getUTCDay()] + " " + d(w.toDay, true) : "Letzte 24 Stunden")
+      : d(w.from, false) + "–" + d(w.toDay, true);
+    var first = state.first && (state.range === "24h" ? state.first.raw : state.first.day);
+    $("navPrev").disabled = !!first && win(state.off + 1).toDay < first;
+    $("navNext").disabled = $("navNow").disabled = !state.off;
+  }
 
   function buildCards(){
     $("gridV").innerHTML = VIEW.map(function(d){
@@ -354,7 +392,7 @@ footer a{color:inherit}
   // der Tagessumme seit Mitternacht (Rücksetzer um Mitternacht beachtet), nicht aus der Momentanrate.
   function hourlyRain(hrows){
     if (!hrows || !hrows.length) return null;
-    var end = Math.floor(hrows[hrows.length-1].t/3600)*3600, start = end - 23*3600;
+    var end = Math.floor(hrows[hrows.length-1].t/3600)*3600, start = state.hourStart || end - 23*3600;
     var sums = []; for (var k=0;k<24;k++) sums.push(null);
     hrows.forEach(function(r){
       var b = Math.round((r.t - start)/3600);
@@ -410,21 +448,22 @@ footer a{color:inherit}
   function loadVerlauf(){
     var range = state.range;
     setStatus("Lädt …");
-    var n = range === "7d" ? 7 : 30;
-    var from = new Date(Date.now() - n*864e5).toISOString().slice(0,10);
-    var jobs = [getJson("/api/series?range=" + range)];
-    if (range !== "24h") jobs.push(getJson("/api/daily?from=" + from));
-    else jobs.push(getJson("/api/hourly?hours=24").catch(function(){ return null; }));
+    var off = state.off, w = win(off), to = w.to ? "&to=" + w.to : "";
+    updateNav();
+    var jobs = [getJson("/api/series?range=" + range + to)];
+    if (range !== "24h") jobs.push(getJson("/api/daily?from=" + w.from + (w.to ? "&to=" + w.toDay : "")));
+    else jobs.push(getJson("/api/hourly?hours=24" + to).catch(function(){ return null; }));
     return Promise.all(jobs).then(function(res){
-      if (range !== state.range) return;
+      if (range !== state.range || off !== state.off) return;
+      state.hourStart = w.start || null;
       state.series = res[0];
       state.daily = range !== "24h" ? res[1] : null;
       state.hourly = range === "24h" ? res[1] : null;
-      if (!state.series.rows.length){ notice("Noch keine Daten im Archiv. Die Aufzeichnung startet mit dem ersten 5-Minuten-Abruf des Workers."); }
+      if (!state.series.rows.length){ notice(off ? "Für diesen Zeitraum gibt es keine 5-Minuten-Messwerte (Archiv ab 15.10.2026). Bei 7 und 30 Tagen zeigen Niederschlag, Wind und Sonne trotzdem die Tageswerte." : "Noch keine Daten im Archiv. Die Aufzeichnung startet mit dem ersten 5-Minuten-Abruf des Workers."); }
       else if (!$("notice").dataset.keep){ notice(null); }
       renderVerlauf();
       var last = state.series.rows.length ? state.series.rows[state.series.rows.length-1].t : null;
-      setStatus(last ? "Letzte Messung " + fFull.format(new Date(last*1000)) + " Uhr" : "Keine Daten");
+      setStatus(off ? "" : last ? "Letzte Messung " + fFull.format(new Date(last*1000)) + " Uhr" : "Keine Daten");
     });
   }
 
@@ -682,10 +721,19 @@ footer a{color:inherit}
   document.querySelectorAll("[data-tab]").forEach(function(b){ b.addEventListener("click", function(){ showTab(b.dataset.tab); }); });
   $("rangeSeg").addEventListener("click", function(e){
     var b = e.target.closest("button"); if (!b) return;
-    state.range = b.dataset.range;
+    state.range = b.dataset.range; state.off = 0;
     this.querySelectorAll("button").forEach(function(x){ x.setAttribute("aria-pressed", x === b); });
     loadVerlauf().catch(fail);
   });
+  function go(off){ state.off = Math.max(0, off); loadVerlauf().catch(fail); }
+  $("navPrev").addEventListener("click", function(){ go(state.off + 1); });
+  $("navNext").addEventListener("click", function(){ go(state.off - 1); });
+  $("navNow").addEventListener("click", function(){ go(0); });
+  // Wie weit zurück: Rohdaten (Tag) bzw. Tageswerte (7/30 Tage)
+  getJson("/api/health").then(function(h){
+    state.first = {raw: h.messwerte && h.messwerte.first ? ymd(h.messwerte.first*1000) : null, day: h.tageswerte && h.tageswerte.first_day};
+    updateNav();
+  }).catch(function(){});
   // #rainSeg entsteht erst in buildCards(), daher Klick über das Raster abfangen
   $("gridV").addEventListener("click", function(e){
     var b = e.target.closest("#rainSeg button"); if (!b) return;
