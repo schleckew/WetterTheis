@@ -479,7 +479,7 @@ function dryCls(rh,mm,pop){ if(rh==null) return ''; if(rh>80||(mm||0)>=0.1||(pop
 function rhHtml(rh,mm,pop){ return rh==null?'':'<span class="rh '+dryCls(rh,mm,pop)+'"><i>LF</i> '+r(rh)+' %</span>'; }
 // Symbol "gefühlt": Thermometer mit Windstrichen
 var FEELICO='<svg class="fi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 14.2V5.5a2.5 2.5 0 0 1 5 0v8.7a4.2 4.2 0 1 1-5 0z"/><circle cx="9.5" cy="17.2" r="1.6" fill="currentColor" stroke="none"/><path d="M15.5 7.5h5M15.5 11.5h3.5M15.5 15.5h5"/></svg>';
-function feelHtml(ft){ return ft==null?'':'<span class="ft tn" title="gefühlte Temperatur">'+FEELICO+r(ft)+'°</span>'; }
+function feelHtml(ft){ return ft==null?'':'<span class="ft tn" title="gefühlte Temperatur">'+FEELICO+'<b style="color:'+tcol(ft)+'">'+r(ft)+'°</b></span>'; }
 function ico(n){return '<span class="cr">'+svg(n,22)+'</span>'}
 function arrow(dir,sz){return '<svg width="'+sz+'" height="'+sz+'" viewBox="0 0 24 24" style="transform:rotate('+Math.round(dir+180)+'deg)" aria-hidden="true"><path d="M12 3l7 17-7-4-7 4z" fill="currentColor"/></svg>'}
 function item(icon,main,sub){return '<div class="it">'+icon+'<div>'+main+(sub?'<small>'+sub+'</small>':'')+'</div></div>'}
@@ -811,7 +811,7 @@ function fcRender(){
     var pr=d.precipitation_probability_max[k];
     return '<button type="button" role="tab" class="dtab'+(k===selD?' on':'')+(t===today?' cur':'')+'" data-d="'+k+'" aria-selected="'+(k===selD)+'" title="'+esc(w[1])+'">'+
       '<span class="dth"><b>'+nm+'</b>'+date+'</span><span class="dbd">'+
-      '<span class="hi tn" style="color:'+tcol(hi)+'">'+r(hi)+'°</span><span class="lo tn" style="color:'+tcol(lo)+'">'+r(lo)+'°</span>'+(d.apparent_temperature_max?'<span class="ft tn" title="gefühlte Höchst- und Tiefsttemperatur">'+FEELICO+r(d.apparent_temperature_max[k])+'° / '+r(d.apparent_temperature_min[k])+'°</span>':'')+
+      '<span class="hi tn" style="color:'+tcol(hi)+'">'+r(hi)+'°</span><span class="lo tn" style="color:'+tcol(lo)+'">'+r(lo)+'°</span>'+(d.apparent_temperature_max?'<span class="ft tn" title="gefühlte Höchst- und Tiefsttemperatur">'+FEELICO+'<b style="color:'+tcol(d.apparent_temperature_max[k])+'">'+r(d.apparent_temperature_max[k])+'°</b>&nbsp;/&nbsp;<b style="color:'+tcol(d.apparent_temperature_min[k])+'">'+r(d.apparent_temperature_min[k])+'°</b></span>':'')+
       '<span class="di">'+w[0]+'</span><span class="dw">'+windRose(da.dir,18,da.ws)+'<b>'+r(da.ws)+'</b>'+gustHtml(d.wind_gusts_10m_max[k])+'</span>'+
       '<span class="dm">'+(ss!=null?svg("sun",14)+ss+' h':'')+'</span><span class="dm rn">'+drop+r(pr)+' %</span><span class="dm rn">'+(d.precipitation_sum[k]>=0.1?fmtL(d.precipitation_sum[k]):'0')+' L/qm</span></span></button>';
   }).join("");
