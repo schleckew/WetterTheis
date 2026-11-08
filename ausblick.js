@@ -477,7 +477,9 @@ function svg(n,sz){return '<svg viewBox="0 0 24 24" width="'+sz+'" height="'+sz+
 // Wäschetrocknen nach Luftfeuchte: gut bis 65 %, mäßig bis 80 %, sonst (oder bei Regen) schlecht
 function dryCls(rh,mm,pop){ if(rh==null) return ''; if(rh>80||(mm||0)>=0.1||(pop||0)>=60) return 'd3'; return rh>65?'d2':'d1'; }
 function rhHtml(rh,mm,pop){ return rh==null?'':'<span class="rh '+dryCls(rh,mm,pop)+'"><i>LF</i> '+r(rh)+' %</span>'; }
-function feelHtml(ft){ return ft==null?'':'<span class="ft tn" title="gefühlte Temperatur">gef. '+r(ft)+'°</span>'; }
+// Symbol "gefühlt": Thermometer mit Windstrichen
+var FEELICO='<svg class="fi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 14.2V5.5a2.5 2.5 0 0 1 5 0v8.7a4.2 4.2 0 1 1-5 0z"/><circle cx="9.5" cy="17.2" r="1.6" fill="currentColor" stroke="none"/><path d="M15.5 7.5h5M15.5 11.5h3.5M15.5 15.5h5"/></svg>';
+function feelHtml(ft){ return ft==null?'':'<span class="ft tn" title="gefühlte Temperatur">'+FEELICO+r(ft)+'°</span>'; }
 function ico(n){return '<span class="cr">'+svg(n,22)+'</span>'}
 function arrow(dir,sz){return '<svg width="'+sz+'" height="'+sz+'" viewBox="0 0 24 24" style="transform:rotate('+Math.round(dir+180)+'deg)" aria-hidden="true"><path d="M12 3l7 17-7-4-7 4z" fill="currentColor"/></svg>'}
 function item(icon,main,sub){return '<div class="it">'+icon+'<div>'+main+(sub?'<small>'+sub+'</small>':'')+'</div></div>'}
@@ -809,7 +811,7 @@ function fcRender(){
     var pr=d.precipitation_probability_max[k];
     return '<button type="button" role="tab" class="dtab'+(k===selD?' on':'')+(t===today?' cur':'')+'" data-d="'+k+'" aria-selected="'+(k===selD)+'" title="'+esc(w[1])+'">'+
       '<span class="dth"><b>'+nm+'</b>'+date+'</span><span class="dbd">'+
-      '<span class="hi tn" style="color:'+tcol(hi)+'">'+r(hi)+'°</span><span class="lo tn" style="color:'+tcol(lo)+'">'+r(lo)+'°</span>'+(d.apparent_temperature_max?'<span class="ft tn" title="gefühlte Höchst- und Tiefsttemperatur">gef. '+r(d.apparent_temperature_max[k])+'° / '+r(d.apparent_temperature_min[k])+'°</span>':'')+
+      '<span class="hi tn" style="color:'+tcol(hi)+'">'+r(hi)+'°</span><span class="lo tn" style="color:'+tcol(lo)+'">'+r(lo)+'°</span>'+(d.apparent_temperature_max?'<span class="ft tn" title="gefühlte Höchst- und Tiefsttemperatur">'+FEELICO+r(d.apparent_temperature_max[k])+'° / '+r(d.apparent_temperature_min[k])+'°</span>':'')+
       '<span class="di">'+w[0]+'</span><span class="dw">'+windRose(da.dir,18,da.ws)+'<b>'+r(da.ws)+'</b>'+gustHtml(d.wind_gusts_10m_max[k])+'</span>'+
       '<span class="dm">'+(ss!=null?svg("sun",14)+ss+' h':'')+'</span><span class="dm rn">'+drop+r(pr)+' %</span><span class="dm rn">'+(d.precipitation_sum[k]>=0.1?fmtL(d.precipitation_sum[k]):'0')+' L/qm</span></span></button>';
   }).join("");
@@ -821,7 +823,7 @@ function fcRender(){
     stHtml='<div class="stt">Stündlich ab '+esc(dayWordFor(st.date,today))+', '+pad2(st.hr)+' Uhr</div>'+
       '<div class="tl" data-key="'+key+'"><div class="in" style="width:'+(slots.length*COL)+'px">'+dayrowHtml(slots)+stripHtml(slots)+'</div></div>'+
       '<details class="lgd"'+(LGOPEN?' open':'')+'><summary>Legende</summary>'+
-      '<div class="olnote lg">gef. = gefühlte Temperatur (berücksichtigt Wind, Luftfeuchte und Sonne). Tropfen mit % = Regenwahrscheinlichkeit. LF = Luftfeuchte, die Farbe zeigt, wie gut Wäsche draußen trocknet: <b class="rh d1">gut</b> (bis 65 %), <b class="rh d2">mäßig</b> (bis 80 %), <b class="rh d3">schlecht</b> (darüber oder bei Regen). Regenmenge je Stunde: <b class="m1">gemessen</b> · <b class="m2">vorhergesagt</b> (L/qm). Windpfeil: zeigt, wohin der Wind weht; Farbe von schwarz (schwach) bis rot (stark). Zahl = mittlerer Wind in km/h, in Klammern die Böen in km/h. Im Wettersymbol zeigt die Zahl der Tropfen die Regenmenge: 1 Tropfen = ganz wenig, 7 Tropfen = Starkregen. Bereits vergangene Stunden zeigen die Messwerte der Station.</div></details>';
+      '<div class="olnote lg">'+FEELICO+' = gefühlte Temperatur (berücksichtigt Wind, Luftfeuchte und Sonne). Tropfen mit % = Regenwahrscheinlichkeit. LF = Luftfeuchte, die Farbe zeigt, wie gut Wäsche draußen trocknet: <b class="rh d1">gut</b> (bis 65 %), <b class="rh d2">mäßig</b> (bis 80 %), <b class="rh d3">schlecht</b> (darüber oder bei Regen). Regenmenge je Stunde: <b class="m1">gemessen</b> · <b class="m2">vorhergesagt</b> (L/qm). Windpfeil: zeigt, wohin der Wind weht; Farbe von schwarz (schwach) bis rot (stark). Zahl = mittlerer Wind in km/h, in Klammern die Böen in km/h. Im Wettersymbol zeigt die Zahl der Tropfen die Regenmenge: 1 Tropfen = ganz wenig, 7 Tropfen = Starkregen. Bereits vergangene Stunden zeigen die Messwerte der Station.</div></details>';
   }
 
   fcHtml='<section class="card full fc tp"><h2>Vorhersage%CHIP%</h2>'+
@@ -953,9 +955,12 @@ var TOPCSS=`
 .tp .hp{font-size:11px;font-weight:700;color:var(--a-ink2);min-height:14px;white-space:nowrap}
 .tp .hp svg{width:9px;height:11px;vertical-align:-1px;margin-right:1px;color:var(--a-rain)}
 .tp .hf,.tp .hr2{min-height:14px;white-space:nowrap;line-height:1.2}
-.tp .hf .ft{font-size:10.5px}
+.tp .hf .ft{font-size:12px}
+.tp .hf .ft .fi{width:12px;height:12px}
 .tp .hr2 .rh{font-size:10.5px;padding:0 3px}
-.fc .ft{font-size:11.5px;font-weight:600;color:var(--a-ink2);white-space:nowrap}
+svg.fi{width:14px;height:14px;vertical-align:-2px;color:var(--a-mute)}
+.fc .ft{display:inline-flex;align-items:center;gap:2px;font-size:14px;font-weight:700;color:var(--a-ink2);white-space:nowrap}
+.fc .ft .fi{width:15px;height:15px;flex:none;color:var(--a-mute)}
 .rh{display:inline-block;font-weight:700;font-size:11.5px;border-radius:5px;padding:1px 5px;white-space:nowrap}
 .rh i{font-style:normal;font-weight:600;opacity:.75}
 .rh.d1{color:#1f7a3a;background:rgba(47,143,58,.14)}
