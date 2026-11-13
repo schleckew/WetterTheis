@@ -33,7 +33,18 @@ def lese(pfad):
     if kopf[:len(SPALTEN)] != SPALTEN:
         sys.exit(f"{pfad}: unerwartete Spalten {kopf}")
     next(zeilen)  # Einheiten
-    return [dict(zip(kopf, z)) for z in zeilen if z[0]]
+    aus = []
+    for z in zeilen:
+        if not z[0]:
+            continue
+        d = dict(zip(kopf, z))
+        # Neuere Exporte enthalten echte Datums-/Zeitwerte statt Text
+        if isinstance(d["Datum"], (dt.datetime, dt.date)):
+            d["Datum"] = d["Datum"].strftime("%d.%m.%Y")
+        if isinstance(d["Zeit"], (dt.datetime, dt.time)):
+            d["Zeit"] = d["Zeit"].strftime("%H:%M")
+        aus.append(d)
+    return aus
 
 
 def werte(z):
@@ -95,7 +106,14 @@ def main():
     ap.add_argument("dateien", nargs="+")
     ap.add_argument("-o", "--ausgabe", default="import.sql")
     a = ap.parse_args()
-    zeilen = [z for d in a.dateien for z in lese(d)]
+    zeilen, gesehen = [], set()
+    for d in a.dateien:
+        for z in lese(d):
+            # Monatsexporte enthalten zusätzlich 0 Uhr des Folgemonats: doppelte Zeilen nur einmal
+            k = (z["Datum"], z["Zeit"], werte(z))
+            if k not in gesehen:
+                gesehen.add(k)
+                zeilen.append(z)
     tage, verworfen, alle = tageswerte(zeilen)
     with open(a.ausgabe, "w", encoding="utf-8", newline="\n") as f:
         f.write(sql(tage))
