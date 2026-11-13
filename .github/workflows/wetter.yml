@@ -1,12 +1,14 @@
 name: Wetterdaten aktualisieren
 
-# Dieser Workflow veröffentlicht nur noch die Seite (HTML und JS) auf GitHub Pages.
-# Die Wetterdaten kommen live über den Cloudflare Worker, deshalb gibt es keinen
-# zeitgesteuerten Abruf und kein Secret mehr.
+# Dieser Workflow veröffentlicht die Seite (HTML und JS) auf GitHub Pages.
+# Die Wetterdaten kommen live über den Cloudflare Worker. Zusätzlich läuft er einmal
+# täglich nachts, um tagesmittel.json (Tagesmittel der Außentemperatur) neu zu erzeugen.
 on:
   workflow_dispatch:           # manuell startbar im Reiter "Actions"
   push:
     branches: [main]
+  schedule:
+    - cron: "30 0 * * *"       # täglich 00:30 UTC (01:30/02:30 Ortszeit), der Vortag ist dann vollständig
 
 permissions:
   contents: read
@@ -33,6 +35,13 @@ jobs:
           cp ./*.js _site/
           cp ./*.webmanifest _site/
           cp -r icons _site/
+
+      # Klappt der Abruf nicht, bleibt die zuletzt veröffentlichte Datei erhalten
+      - name: Tagesmittel erzeugen
+        run: |
+          node tools/tagesmittel.mjs _site/tagesmittel.json \
+            || curl -fsS "https://schleckew.github.io/WetterTheis/tagesmittel.json" -o _site/tagesmittel.json \
+            || echo "::warning::tagesmittel.json konnte weder erzeugt noch übernommen werden"
 
       - uses: actions/configure-pages@v6
       - uses: actions/upload-pages-artifact@v5
