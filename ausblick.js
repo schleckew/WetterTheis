@@ -905,6 +905,9 @@ var TOPCSS=`
 .wk .bg2{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:4px 0 10px}
 .wk .tmp{font-family:var(--a-disp);font-weight:800;font-size:clamp(64px,19vw,88px);line-height:.95;letter-spacing:-.03em}
 .wk .tmp small{font-size:.38em;font-weight:700;margin-left:3px;opacity:.75;letter-spacing:0}
+.wk .tf{display:flex;align-items:center;gap:6px;margin-top:8px;font-family:var(--a-disp);font-weight:800;font-size:clamp(22px,6.5vw,28px);line-height:1}
+.wk .tf svg.fi{width:26px;height:26px;color:var(--a-ink2)}
+.wk .tf small{font-family:var(--a-body);font-size:14px;font-weight:600;color:var(--a-ink2)}
 .wk .cw{text-align:center}
 .wk .cw .e{font-size:60px;line-height:1.05;filter:drop-shadow(0 5px 7px rgba(0,0,0,.2))}
 .wk .cw .n{font-size:14px;font-weight:600;color:var(--a-ink)}
@@ -1037,6 +1040,10 @@ function heroHtml(){
   var w0=wxIcon({scope:"hour",mm:mm0,cc:h.cloud_cover[i0],day:h.is_day[i0],th:c0>=95,sn:!!SNOWC[c0],fg:c0===45||c0===48});
   var hum=st&&L.hum!=null?L.hum:h.relative_humidity_2m[i0], pr=st&&L.press!=null?L.press:h.pressure_msl[i0];
   var ws=st&&L.wind!=null?L.wind:h.wind_speed_10m[i0], gu=st&&L.gust!=null?L.gust:h.wind_gusts_10m[i0], wd=st&&L.dir!=null?L.dir:h.wind_direction_10m[i0];
+  // Gefühlte Temperatur aus den Messwerten (Steadman-Formel wie bei Open-Meteo, ohne Sonne), sonst Modellwert
+  var ft=null;
+  if(st&&L.hum!=null&&L.wind!=null){ var e=L.hum/100*6.105*Math.exp(17.27*t/(237.7+t)); ft=t+0.33*e-0.70*(L.wind/3.6)-4.0; }
+  else if(h.apparent_temperature) ft=h.apparent_temperature[i0];
   var stamp, old=false;
   if(st&&L.ts){ stamp="Messung "+BT.format(new Date(L.ts*1000)).replace(", "," · ")+" Uhr"; old=(Date.now()/1000-L.ts)>1800; }
   else stamp="Modellwert (Messung nicht verfügbar)";
@@ -1047,7 +1054,8 @@ function heroHtml(){
     (st&&L.rain!=null?'<span class="c2">'+svgI("drop")+fmtL(L.rain)+' L/qm<small>heute</small></span>':'');
   return '<section class="card full wk"><div class="hz sk-'+w0[2]+'">'+
     '<div class="hd"><b>Wincheringen-Mont</b><span class="st'+(old?' old':'')+'">'+esc(stamp)+'</span></div>'+
-    '<div class="bg2"><div class="tmp tn" style="color:'+tcol(t)+'">'+num1(t)+'<small>°C</small></div>'+
+    '<div class="bg2"><div><div class="tmp tn" style="color:'+tcol(t)+'">'+num1(t)+'<small>°C</small></div>'+
+    (ft!=null?'<div class="tf tn" title="gefühlte Temperatur">'+FEELICO+'<b style="color:'+tcol(ft)+'">'+num1(ft)+'°C</b><small>gefühlt</small></div>':'')+'</div>'+
     '<div class="cw"><div class="e">'+w0[0]+'</div><div class="n">'+esc(w0[1])+'</div></div></div>'+
     '<div class="chips">'+chips+'</div></div>'+
     '</section>';
