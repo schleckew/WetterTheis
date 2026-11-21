@@ -24,7 +24,7 @@ jobs:
     runs-on: ubuntu-24.04
     environment:
       name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+      url: ${{ steps.deployment.outputs.page_url || steps.deployment2.outputs.page_url }}
     steps:
       - uses: actions/checkout@v6
 
@@ -48,4 +48,14 @@ jobs:
         with:
           path: _site
       - id: deployment
+        uses: actions/deploy-pages@v5
+        continue-on-error: true
+
+      # Manchmal findet GitHub das eben hochgeladene Paket noch nicht ("No artifacts named
+      # github-pages were found"): kurz warten und die Veröffentlichung ein zweites Mal versuchen.
+      - name: Kurz warten vor zweitem Versuch
+        if: steps.deployment.outcome == 'failure'
+        run: sleep 30
+      - id: deployment2
+        if: steps.deployment.outcome == 'failure'
         uses: actions/deploy-pages@v5

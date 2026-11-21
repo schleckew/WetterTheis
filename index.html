@@ -216,9 +216,13 @@ function heroColor(t){
   }
   return "rgb("+STOPS[STOPS.length-1][1].join(",")+")";
 }
-function windchill(t,v){
-  if(t<=10 && v>4.8){ var p=Math.pow(v,.16); return 13.12+.6215*t-11.37*p+.3965*t*p; }
-  return t;
+// Gefühlte Temperatur nach Steadman (wie Open-Meteo und die Vorhersageseite, ohne Sonne):
+// berücksichtigt Temperatur, Luftfeuchte und Wind
+function apparent(t,rh,v){
+  if(!ok(t)) return null;
+  if(!ok(rh)||!ok(v)) return t;
+  var e=rh/100*6.105*Math.exp(17.27*t/(237.7+t));
+  return t+0.33*e-0.70*(v/3.6)-4.0;
 }
 function uvInfo(u){
   if(u<3) return {c:"var(--good)",t:"niedrig"};
@@ -268,7 +272,7 @@ function render(json, live, note){
   var b=$("banner");
   if(note){ b.textContent=note; b.classList.add("show"); } else b.classList.remove("show");
 
-  var t=c.temperature, wc=ok(c.windchill)?c.windchill:windchill(t,c.windspeed||0);
+  var t=c.temperature, wc=apparent(t,c.humidity,c.windspeed||0);
   var dwc = wc-t, diff = Math.abs(dwc)>=.3, fcls = !diff ? 'same' : (dwc<0 ? 'cold' : 'warm');
   var fArrow = !diff ? '<path d="M17.5 10h4.5M17.5 14h4.5"/>' : (dwc<0 ? '<path d="M19.5 8v8M16.5 13l3 3 3-3"/>' : '<path d="M19.5 16V8M16.5 11l3-3 3 3"/>');
   var fIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14.2V5.5a2.5 2.5 0 0 1 5 0v8.7a4.2 4.2 0 1 1-5 0z"/><circle cx="11.5" cy="17.2" r="1.6" fill="currentColor" stroke="none"/><path d="M11.5 9v6.5"/>'+fArrow+'</svg>';
