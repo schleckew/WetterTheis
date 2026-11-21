@@ -83,7 +83,7 @@ body{margin:0;min-height:100%;background:var(--bg);color:var(--ink);font-family:
 .bar.sticky.stuck{box-shadow:0 6px 12px -8px rgba(0,0,0,.35);border-bottom:1px solid var(--line)}
 .s{display:none}
 @media (max-width:560px){
-  .bar.sticky{flex-wrap:nowrap;gap:6px;padding:6px 14px}
+  .bar.sticky{flex-wrap:wrap;gap:6px;padding:6px 14px}
   .bar.sticky .nav{gap:4px;flex-wrap:nowrap;min-width:0}
   .bar.sticky .nav button,.bar.sticky .seg button{padding:6px 9px;font-size:13px}
   .bar.sticky .navlbl{min-width:0;font-size:13px;gap:4px;padding:6px 4px}
@@ -151,6 +151,8 @@ footer a{color:inherit}
         <button type="button" data-range="24h" aria-pressed="true">Tag</button>
         <button type="button" data-range="7d" aria-pressed="false"><span class="l">7 Tage</span><span class="s">7 T</span></button>
         <button type="button" data-range="30d" aria-pressed="false"><span class="l">30 Tage</span><span class="s">30 T</span></button>
+        <button type="button" data-range="month" aria-pressed="false">Monat</button>
+        <button type="button" data-range="year" aria-pressed="false">Jahr</button>
       </div>
     </div>
     <div class="grid" id="gridV"></div>
@@ -282,15 +284,36 @@ footer a{color:inherit}
   // Tag: aktuell die letzten 24 Stunden, zurück je ein Kalendertag.
   // 7/30 Tage: n Kalendertage bis einschließlich heute, zurück jeweils um n Tage verschoben.
   // state.end: letzter Tag des gezeigten Zeitraums (YYYY-MM-DD) oder null für "Aktuell"
+  // Monat/Jahr: Kalendermonat bzw. Kalenderjahr, das state.end (oder heute) enthält; nur Tageswerte
+  var MONL = ["Januar","Februar","März","April","Mai","Juni","Juli","August","September","Oktober","November","Dezember"];
+  function isCal(){ return state.range === "month" || state.range === "year"; }
+  function lastOfMonth(day){ var p = day.split("-").map(Number); return new Date(Date.UTC(p[0], p[1], 0)).toISOString().slice(0,10); }
   function win(end){
-    var n = NDAYS[state.range], toDay = end || ymd(Date.now()), from = addDays(toDay, -(n-1));
-    if (!end) return {n:n, from:from, toDay:toDay, to:null};
-    return {n:n, from:from, toDay:toDay, to:midnight(addDays(toDay, 1)), start:midnight(toDay)};
+    var today = ymd(Date.now());
+    if (isCal()){
+      var ref = end || today, y = ref.slice(0,4), m = state.range === "month";
+      var from = m ? ref.slice(0,8) + "01" : y + "-01-01", last = m ? lastOfMonth(ref) : y + "-12-31", cur = last >= today;
+      return {cal:state.range, from:from, last:last, toDay:cur ? today : last, current:cur};
+    }
+    var n = NDAYS[state.range], toDay = end || today, from = addDays(toDay, -(n-1));
+    if (!end) return {n:n, from:from, toDay:toDay, to:null, current:true};
+    return {n:n, from:from, toDay:toDay, to:midnight(addDays(toDay, 1)), start:midnight(toDay), current:false};
   }
   function setEnd(day){ state.end = day && day < ymd(Date.now()) ? day : null; }
   function firstDay(){ return state.first && (state.range === "24h" ? state.first.raw : state.first.day); }
   function updateNav(){
-    var w = win(state.end), d = function(x, y){ var p = x.split("-"); return p[2] + "." + p[1] + "." + (y ? p[0] : ""); };
+    var w = win(state.end);
+    if (w.cal){
+      var mo = +w.from.slice(5,7) - 1, y = w.from.slice(0,4);
+      var lc = w.cal === "month" ? MONL[mo] + " " + y : y, sc = w.cal === "month" ? MONTHS[mo] + " " + y : y;
+      $("navLbl").innerHTML = '<span class="l">' + lc + '</span><span class="s">' + sc + "</span>";
+      var f = firstDay(), inp0 = $("navDate");
+      $("navPrev").disabled = !!f && addDays(w.from, -1) < f;
+      $("navNext").disabled = $("navNow").disabled = w.current;
+      inp0.max = ymd(Date.now()); inp0.min = f || ""; inp0.value = w.toDay;
+      return;
+    }
+    var d = function(x, y){ var p = x.split("-"); return p[2] + "." + p[1] + "." + (y ? p[0] : ""); };
     var lang = w.n === 1 ? (state.end ? WD[new Date(w.toDay + "T12:00:00Z").getUTCDay()] + " " + d(w.toDay, true) : "Letzte 24 Stunden")
                          : d(w.from, false) + "–" + d(w.toDay, true);
     var kurz = w.n === 1 ? (state.end ? WD[new Date(w.toDay + "T12:00:00Z").getUTCDay()] + " " + d(w.toDay, false) : "Letzte 24 h")
@@ -312,6 +335,7 @@ footer a{color:inherit}
   }
 
   function renderVerlauf(){
+    if (isCal()){ if (state.cal) renderCal(); return; }
     var S = state.series; if (!S) return;
     var rows = S.rows, range = state.range;
     var ts = rows.map(function(r){ return r.t; });
@@ -338,6 +362,96 @@ footer a{color:inherit}
       var main = d.lines[0].k, vals = rows.map(function(r){ return r[main]; });
       if (d.id === "solar"){ stat.textContent = "Spitze " + num(maxOf(vals), 0) + " W/m² · UV max. " + num(maxOf(rows.map(function(r){ return r.uv; })), 1); }
       else { stat.textContent = "min " + num(minOf(vals), d.dig) + " · max " + num(maxOf(vals), d.dig) + " " + d.unit; }
+    });
+  }
+
+  // ---------- Monat (Tageswerte) und Jahr (Monatswerte) aus /api/daily ----------
+  function calBuckets(rows, w){
+    var year = w.cal === "year", today = ymd(Date.now()), B = [], idx = {};
+    if (year){
+      for (var m = 0; m < 12; m++){ var k = w.from.slice(0,5) + String(m+1).padStart(2,"0"); idx[k] = B.length; B.push({label:MONTHS[m], when:"im " + MONL[m], rows:[]}); }
+    } else {
+      for (var d = w.from; d <= w.last; d = addDays(d, 1)){ idx[d] = B.length; B.push({label:d.slice(8,10) + ".", when:"am " + d.slice(8,10) + "." + d.slice(5,7) + ".", rows:[]}); }
+    }
+    rows.forEach(function(r){ var i = idx[year ? r.day.slice(0,7) : r.day]; if (i !== undefined) B[i].rows.push(r); });
+    function vals(b, k){ return b.rows.map(function(r){ return r[k]; }).filter(has); }
+    function sum(a){ return a.length ? a.reduce(function(x,y){ return x+y; }, 0) : null; }
+    function avg(a){ return a.length ? sum(a) / a.length : null; }
+    function mx(a){ return a.length ? Math.max.apply(null, a) : null; }
+    function mn(a){ return a.length ? Math.min.apply(null, a) : null; }
+    B.forEach(function(b){
+      b.rain = sum(vals(b, "rain_mm")); b.rr = mx(vals(b, "rainrate_max"));
+      b.tavg = avg(vals(b, "temp_avg")); b.tmax = mx(vals(b, "temp_max")); b.tmin = mn(vals(b, "temp_min"));
+      b.wavg = avg(vals(b, "wind_avg")); b.gust = mx(vals(b, "gust_max"));
+      b.solar = sum(vals(b, "solar_kwh")); b.press = avg(vals(b, "press_avg")); b.hum = avg(vals(b, "hum_avg"));
+    });
+    // erwartete Tage: ab Archivbeginn bis heute
+    var f = firstDay(), want = 0; for (var x = f && f > w.from ? f : w.from; x <= w.last && x <= today; x = addDays(x, 1)) want++;
+    return {year:year, b:B, have:rows.length, want:want};
+  }
+
+  function renderCal(){
+    var C = state.cal, B = C.b, per = C.year ? "Monat" : "Tag", what = C.year ? "Monatswerte" : "Tageswerte";
+    var labels = B.map(function(b){ return b.label; });
+    function col(k, dg){ var f = Math.pow(10, dg === undefined ? 1 : dg); return B.map(function(b){ return has(b[k]) ? Math.round(b[k]*f)/f : null; }); }
+    function total(a){ return a.filter(has).reduce(function(x,y){ return x+y; }, 0); }
+    function mean(a){ var v = a.filter(has); return v.length ? total(v) / v.length : null; }
+    function best(k, low){ var r = null; B.forEach(function(b){ if (has(b[k]) && (!r || (low ? b[k] < r[k] : b[k] > r[k]))) r = b; }); return r; }
+    function opts(legend, unitOf){
+      var o = baseOptions(legend);
+      o.scales.x.ticks.maxTicksLimit = C.year ? 12 : 11;
+      o.plugins.tooltip = {callbacks:{label:function(c){ return (c.dataset.label ? c.dataset.label + ": " : "") + num(c.parsed.y, 1) + " " + unitOf(c); }}};
+      return o;
+    }
+    function line(label, data, c){ var cc = css(c) || c; return {label:label, data:data, borderColor:cc, backgroundColor:cc, borderWidth:2, pointRadius:3, pointHoverRadius:4, tension:.25, spanGaps:true}; }
+    function bars(label, data, c){ return {label:label, data:data, backgroundColor:css(c), borderRadius:3}; }
+    function st(id, t){ $("st-" + id).textContent = t; }
+
+    // Niederschlag und Temperatur
+    var rain = col("rain"), tavg = col("tavg");
+    var o = opts(true, function(c){ return c.dataset.yAxisID === "y1" ? "°C" : "L/qm"; });
+    o.scales.y.beginAtZero = true; o.scales.y.title = {display:true, text:"L/qm"};
+    o.scales.y1 = {position:"right", grid:{display:false}, title:{display:true, text:"°C"}};
+    mount("c-combo", {type:"bar", data:{labels:labels, datasets:[
+      Object.assign(line("Ø Temperatur", tavg, "--accent-temp"), {type:"line", yAxisID:"y1", order:0}),
+      Object.assign(bars("Niederschlag", rain, "--accent-rain"), {yAxisID:"y", order:1})]}, options:o});
+    st("combo", "Summe " + num(total(rain), 1) + " L/qm · Ø " + num(mean(tavg), 1) + " °C · " + what);
+
+    // Temperatur: Höchst-, Mittel- und Tiefstwert
+    mount("c-temp", {type:"line", data:{labels:labels, datasets:[line("Max.", col("tmax"), "--accent-temp"), line("Mittel", tavg, "--ink2"), line("Min.", col("tmin"), "--c-wind")]},
+                     options:opts(true, function(){ return "°C"; })});
+    var hi = best("tmax"), lo = best("tmin", true);
+    st("temp", (lo ? "min " + num(lo.tmin, 1) + " " + lo.when : "") + (hi ? " · max " + num(hi.tmax, 1) + " " + hi.when : "") + " · Ø " + num(mean(tavg), 1) + " °C");
+
+    // Niederschlag bzw. Regenrate
+    var o2 = opts(false, function(){ return state.rainView === "rate" ? "mm/h" : "L/qm"; }); o2.scales.y.beginAtZero = true;
+    if (state.rainView === "rate"){
+      var rr = col("rr"), r1 = best("rr");
+      mount("c-rain", {type:"bar", data:{labels:labels, datasets:[bars("Max. Regenrate", rr, "--accent-rain")]}, options:o2});
+      st("rain", r1 ? "Höchste Regenrate je " + per + ", max. " + num(r1.rr, 1) + " mm/h " + r1.when : "Keine Regenrate");
+    } else {
+      var w1 = best("rain");
+      mount("c-rain", {type:"bar", data:{labels:labels, datasets:[bars("Niederschlag", rain, "--accent-rain")]}, options:o2});
+      st("rain", "Summe " + num(total(rain), 1) + " L/qm" + (w1 && w1.rain > 0 ? " · nassester " + per + " " + num(w1.rain, 1) + " " + w1.when : ""));
+    }
+
+    // Wind
+    var wavg = col("wavg"), g = best("gust");
+    var o3 = opts(true, function(){ return "km/h"; }); o3.scales.y.beginAtZero = true;
+    mount("c-wind", {type:"line", data:{labels:labels, datasets:[line("Mittel", wavg, "--accent-wind"), line("Max. (Böe)", col("gust"), "--accent-gust")]}, options:o3});
+    st("wind", "Mittel " + num(mean(wavg), 1) + " km/h" + (g ? " · Max. " + num(g.gust, 1) + " km/h " + g.when : "") + " · " + what);
+
+    // Sonnenenergie
+    var sol = col("solar", 2), s1 = best("solar");
+    var o4 = opts(false, function(){ return "kWh/m²"; }); o4.scales.y.beginAtZero = true;
+    mount("c-solar", {type:"bar", data:{labels:labels, datasets:[bars("Ertrag", sol, "--accent-solar")]}, options:o4});
+    st("solar", "Summe " + num(total(sol), 1) + " kWh/m² · Ø " + num(mean(sol), C.year ? 0 : 2) + " je " + per + (s1 ? " · bester " + per + " " + num(s1.solar, C.year ? 0 : 2) + " " + s1.when : ""));
+
+    // Luftdruck und Luftfeuchte (Mittelwerte)
+    [["press", "Luftdruck", "--accent-press", "hPa", 1], ["hum", "Luftfeuchte", "--accent-dew", "%", 0]].forEach(function(p){
+      var v = col(p[0], p[4]), ok = v.filter(has);
+      mount("c-" + p[0], {type:"line", data:{labels:labels, datasets:[line(p[1], v, p[2])]}, options:opts(false, function(){ return p[3]; })});
+      st(p[0], ok.length ? "Mittel je " + per + ": min " + num(Math.min.apply(null, ok), p[4]) + " · max " + num(Math.max.apply(null, ok), p[4]) + " " + p[3] : "Keine Werte");
     });
   }
 
@@ -484,6 +598,18 @@ footer a{color:inherit}
     setStatus("Lädt …");
     var end = state.end, w = win(end), to = w.to ? "&to=" + w.to : "";
     updateNav();
+    if (w.cal){
+      return getJson("/api/daily?from=" + w.from + "&to=" + w.last).then(function(res){
+        if (range !== state.range || end !== state.end) return;
+        state.cal = calBuckets(res.rows, w);
+        var c = state.cal;
+        if (!c.have) notice("Für diesen Zeitraum gibt es keine Tageswerte im Archiv.");
+        else if (c.have < c.want) notice("Für " + (c.want - c.have) + " von " + c.want + " Tagen liegen keine Messwerte vor. Summen fallen dort zu niedrig aus.");
+        else if (!$("notice").dataset.keep) notice(null);
+        renderVerlauf();
+        setStatus(c.have + " Tage mit Daten");
+      });
+    }
     var jobs = [getJson("/api/series?range=" + range + to)];
     if (range !== "24h") jobs.push(getJson("/api/daily?from=" + w.from + (w.to ? "&to=" + w.toDay : "")));
     else jobs.push(getJson("/api/hourly?hours=24" + to).catch(function(){ return null; }));
@@ -782,7 +908,12 @@ footer a{color:inherit}
     var mark = document.createElement("div"); $("navBar").before(mark);
     new IntersectionObserver(function(en){ $("navBar").classList.toggle("stuck", !en[0].isIntersecting); }).observe(mark);
   }
-  function step(k){ var w = win(state.end); go(addDays(w.toDay, k * w.n)); }
+  function step(k){
+    var w = win(state.end);
+    if (w.cal === "month"){ var p = w.from.split("-").map(Number); go(lastOfMonth(new Date(Date.UTC(p[0], p[1]-1+k, 1)).toISOString().slice(0,10))); return; }
+    if (w.cal === "year"){ go((+w.from.slice(0,4) + k) + "-12-31"); return; }
+    go(addDays(w.toDay, k * w.n));
+  }
   $("navPrev").addEventListener("click", function(){ step(-1); });
   $("navNext").addEventListener("click", function(){ step(1); });
   $("navNow").addEventListener("click", function(){ go(null); });
